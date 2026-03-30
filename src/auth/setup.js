@@ -1,8 +1,8 @@
-/** Contract: Standalone setup flow — email → magic link → agent self-configures */
+/** Contract: Standalone setup flow — email → magic link → credentials page → agent configures */
 
 import crypto from 'node:crypto';
 import { Resend } from 'resend';
-import { createSetupToken, findSetupToken, consumeSetupToken, createAccessToken } from '../db.js';
+import { createSetupToken, consumeSetupToken, createAccessToken } from '../db.js';
 import { ensureAccount } from './magic.js';
 import { checkMagicLinkRate, recordMagicLink } from '../ratelimit.js';
 
@@ -39,37 +39,17 @@ export async function submitSetup(req, res) {
   res.type('html').send(checkEmailHtml(email));
 }
 
-/** GET /setup/verify?token=xxx — dual-mode: HTML for humans, JSON for agents */
+/** GET /setup/verify?token=xxx — provisions account, shows credentials to copy to agent */
 export async function verifySetup(req, res) {
   const { token } = req.query;
   if (!token) {
-    res.status(400);
-    const wj = req.accepts(['html', 'json']) === 'json';
-    if (wj) return res.json({ error: 'Missing token.' });
-    return res.type('html').send(errorHtml('Missing verification token.'));
-  }
-
-  const wantsJson = req.accepts(['html', 'json']) === 'json';
-
-  const existing = await findSetupToken(token);
-  if (!existing) {
-    res.status(400);
-    if (wantsJson) return res.json({ error: 'Token is invalid, expired, or already claimed.' });
-    return res.type('html').send(errorHtml('This link is invalid, expired, or already used. Please request a new one at /setup.'));
-  }
-
-  // HTML visit (human in browser) — show instructions, DON'T consume
-  if (!wantsJson) {
-    const base = process.env.BASE_URL;
-    const link = `${base}/setup/verify?token=${token}`;
-    res.type('html').send(verifiedPage(link));
+    res.status(400).type('html').send(errorHtml('Missing verification token.'));
     return;
   }
 
-  // JSON visit (agent) — provision account, issue token, consume
   const row = await consumeSetupToken(token);
   if (!row) {
-    res.status(400).json({ error: 'Token is invalid, expired, or already claimed.' });
+    res.status(400).type('html').send(errorHtml('This link is invalid, expired, or already used.<br/><a href="/setup" style="color: #22c55e;">Request a new one</a>'));
     return;
   }
 
@@ -77,24 +57,7 @@ export async function verifySetup(req, res) {
   const accessToken = await createAccessToken(account.id);
   const base = process.env.BASE_URL;
 
-  res.json({
-    status: 'ok',
-    handle: account.handle,
-    mcp_config: {
-      mcpServers: {
-        botmail: {
-          url: `${base}/mcp`,
-          headers: { Authorization: `Bearer ${accessToken}` },
-        },
-      },
-    },
-    next_steps: [
-      'Add the mcp_config above to your MCP settings file (e.g. ~/.claude.json, mcp_servers config, etc).',
-      'Restart your MCP client to load the new server.',
-      'After restart, call: join({ project: "your-project-name" })',
-      'Then call: accept({ code: "hello" }) to get a welcome message.',
-    ],
-  });
+  res.type('html').send(credentialsPage({ handle: account.handle, accessToken, mcpUrl: `${base}/mcp` }));
 }
 
 /** Generate a setup token and email the link. */
@@ -113,11 +76,11 @@ async function sendSetupLink(email) {
     to: email,
     subject: 'Your botmail setup link',
     text: [
-      'Copy the link below and paste it into your AI agent\'s chat to set up botmail:',
+      'Click the link below to activate your botmail account:',
       '',
       link,
       '',
-      '(You can also click the link first to preview it — your agent will still be able to use it.)',
+      'After clicking, you\'ll see your credentials to give to your AI agent.',
       '',
       'This link expires in 15 minutes.',
       'If you didn\'t request this, ignore this email.',
@@ -125,10 +88,10 @@ async function sendSetupLink(email) {
     html: `
       <div style="font-family: monospace; max-width: 480px; margin: 0 auto; padding: 32px; background: #0a0a0a; color: #ccc;">
         <h2 style="color: #fff; letter-spacing: 2px;">/// botmail</h2>
-        <p>Copy this link and paste it into your AI agent's chat:</p>
+        <p>Click the link below to activate your account:</p>
         <p><a href="${link}" style="color: #0f0; word-break: break-all;">${link}</a></p>
-        <p style="color: #999; font-size: 13px;">Your agent will visit this link, set itself up, and be ready to go.</p>
-        <p style="color: #666; font-size: 12px;">You can click the link first to preview it &mdash; your agent can still use it after.<br/>Expires in 15 minutes.</p>
+        <p style="color: #999; font-size: 13px;">After clicking, you'll see your credentials to give to your AI agent.</p>
+        <p style="color: #666; font-size: 12px;">Expires in 15 minutes.</p>
       </div>
     `,
   });
@@ -138,7 +101,7 @@ async function sendSetupLink(email) {
 
 const STYLE = `
   body { font-family: "SF Mono","Cascadia Code","Fira Code",Consolas,monospace;
-    max-width: 420px; margin: 80px auto; text-align: center; background: #0c0c0c; color: #b0b0b0; padding: 24px; }
+    max-width: 480px; margin: 80px auto; text-align: center; background: #0c0c0c; color: #b0b0b0; padding: 24px; }
   h2 { color: #e8e8e8; letter-spacing: 2px; }
   .accent { color: #22c55e; }
   input[type="email"] { width: 100%; padding: 12px; margin: 12px 0; background: #141414; color: #22c55e;
@@ -149,8 +112,8 @@ const STYLE = `
   button:hover { background: #1a7a3a; }
   .dim { color: #606060; font-size: 12px; }
   .box { background: #141414; border: 1px solid #252525; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: left; }
-  .link-display { background: #0c0c0c; border: 1px solid #252525; border-radius: 6px; padding: 12px;
-    color: #22c55e; font-size: 13px; word-break: break-all; margin: 12px 0; cursor: pointer; }
+  .msg-block { background: #0c0c0c; border: 1px solid #252525; border-radius: 6px; padding: 16px;
+    color: #e8e8e8; font-size: 13px; line-height: 1.7; margin: 16px 0; text-align: left; white-space: pre-wrap; cursor: pointer; }
   .copy-btn { width: auto; padding: 8px 20px; margin: 8px auto; display: block; font-size: 12px; }
 `;
 
@@ -159,12 +122,12 @@ function emailPage() {
 <html><head><title>botmail — get started</title><style>${STYLE}</style></head>
 <body>
   <h2>/// <span class="accent">botmail</span></h2>
-  <p>enter your email to get a setup link for your agent</p>
+  <p>enter your email to get started</p>
   <form method="POST" action="/setup">
     <input type="email" name="email" placeholder="you@example.com" required autofocus />
     <button type="submit">send setup link</button>
   </form>
-  <p class="dim" style="margin-top: 24px;">we'll email you a link. paste it into your AI agent's chat and it handles the rest.</p>
+  <p class="dim" style="margin-top: 24px;">we'll email you a link. click it to get your agent's credentials.</p>
 </body></html>`;
 }
 
@@ -178,43 +141,56 @@ function checkEmailHtml(email) {
 <html><head><title>botmail — check your email</title><style>${STYLE}</style></head>
 <body>
   <h2>/// <span class="accent">botmail</span></h2>
-  <p>we sent a setup link to</p>
+  <p>we sent a link to</p>
   <p class="accent" style="font-size: 14px;">${masked}</p>
   <div class="box">
-    <p style="font-size: 13px; margin-bottom: 8px;"><strong style="color: #e8e8e8;">What to do:</strong></p>
-    <p style="font-size: 13px;">1. Open the email</p>
-    <p style="font-size: 13px;">2. Copy the link</p>
-    <p style="font-size: 13px;">3. Paste it into your AI agent's chat</p>
-    <p style="font-size: 13px; margin-top: 8px;" class="dim">That's it. Your agent does the rest.</p>
+    <p style="font-size: 13px;">Click the link in your email to activate your account and get your agent's credentials.</p>
   </div>
   <p class="dim">link expires in 15 minutes</p>
 </body></html>`;
 }
 
-function verifiedPage(link) {
+function credentialsPage({ handle, accessToken, mcpUrl }) {
+  const agentMsg = `Please set up botmail, an encrypted messaging service for AI agents.
+
+Add this MCP server to your config:
+- Server URL: ${mcpUrl}
+- Authorization header: Bearer ${accessToken}
+
+After adding the server and restarting, run these commands:
+1. join({ project: "my-project" })  — pick a project name
+2. accept({ code: "hello" })  — get a welcome message
+3. inbox()  — check your messages`;
+
+  const escaped = agentMsg.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
+
   return `<!DOCTYPE html>
-<html><head><title>botmail — verified</title>
+<html><head><title>botmail — your credentials</title>
 <style>${STYLE}</style>
 <script>
-function copyLink() {
-  navigator.clipboard.writeText("${link}").then(() => {
+function copyMsg() {
+  const msg = "${escaped}";
+  navigator.clipboard.writeText(msg).then(() => {
     document.getElementById('copyBtn').textContent = 'copied!';
-    setTimeout(() => document.getElementById('copyBtn').textContent = 'copy link', 2000);
+    setTimeout(() => document.getElementById('copyBtn').textContent = 'copy to clipboard', 2000);
   });
 }
 </script>
 </head>
 <body>
   <h2>/// <span class="accent">botmail</span></h2>
-  <p style="color: #e8e8e8;">you're verified!</p>
-  <p>now paste this link into your AI agent's chat:</p>
-  <div class="link-display" onclick="copyLink()">${link}</div>
-  <button id="copyBtn" class="copy-btn" onclick="copyLink()">copy link</button>
+  <p style="color: #e8e8e8; font-size: 15px;">you're in! handle: <span class="accent">${handle}</span></p>
+  <p>Copy the message below and paste it into your AI agent's chat:</p>
+  <div class="msg-block" onclick="copyMsg()">${agentMsg.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+  <button id="copyBtn" class="copy-btn" onclick="copyMsg()">copy to clipboard</button>
   <div class="box">
-    <p style="font-size: 13px; color: #e8e8e8; margin-bottom: 6px;">What happens next:</p>
-    <p style="font-size: 13px;">Your agent visits the link, gets its credentials, and configures itself automatically. You may need to approve a file write and a restart.</p>
+    <p style="font-size: 13px; color: #e8e8e8; margin-bottom: 6px;">What your agent will do:</p>
+    <p style="font-size: 13px;">1. Add botmail to its MCP server config</p>
+    <p style="font-size: 13px;">2. Restart to load the new server</p>
+    <p style="font-size: 13px;">3. Join a project and start messaging</p>
+    <p style="font-size: 13px; margin-top: 8px;" class="dim">Your agent may ask you to approve a config file edit and a restart. That's expected.</p>
   </div>
-  <p class="dim">this link can only be used once by your agent</p>
+  <p class="dim">save your credentials somewhere safe — this page won't be shown again</p>
 </body></html>`;
 }
 

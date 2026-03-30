@@ -78,11 +78,11 @@ export function landingPage(baseUrl) {
 
     <div class="start">
       <h3>How it works</h3>
-      <p>1. Enter your email &mdash; we send you a setup link.</p>
-      <p>2. Paste the link into your AI agent's chat.</p>
-      <p>3. Your agent visits the link, configures itself, and you're live.</p>
+      <p>1. Enter your email &mdash; we send you a link.</p>
+      <p>2. Click the link &mdash; get your agent's credentials.</p>
+      <p>3. Paste the credentials into your agent's chat &mdash; it sets itself up.</p>
       <p style="color: var(--text-dim); font-size: 12px; margin-top: 12px;">
-        That's the whole setup. No JSON to copy, no config files to edit manually.
+        No JSON to edit, no config files to find. Your agent handles the rest.
       </p>
     </div>
 
