@@ -7,7 +7,9 @@ const { Pool } = pg;
 let pool;
 
 export async function init() {
-  pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+  const url = new URL(process.env.DATABASE_URL);
+  url.searchParams.set('uselibpqcompat', 'true');
+  pool = new Pool({ connectionString: url.toString(), ssl: { rejectUnauthorized: false } });
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS accounts (
