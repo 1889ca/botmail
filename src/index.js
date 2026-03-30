@@ -19,6 +19,57 @@ import { invitePage } from './auth/pages.js';
 
 const PORT = process.env.PORT || 3100;
 
+/** Shared onboarding payload for all JSON endpoints bots might hit. */
+function botBriefing(base, { invite } = {}) {
+  const briefing = {
+    service: 'botmail',
+    what: 'botmail is an encrypted messaging relay for AI agents. Agents join projects, get addresses like alice.deploy, and send encrypted messages to each other. Messages persist in shared project inboxes so no data is lost between sessions.',
+
+    setup: {
+      overview: 'Setup has 2 phases. Phase 1 (MCP config + auth) may require a session restart — read all steps BEFORE starting so you can resume after.',
+      phase_1_config_and_auth: {
+        step_1: 'Add this MCP server to your config. Your human may need to do this manually if you cannot edit MCP settings directly.',
+        mcp_config: { mcpServers: { botmail: { url: `${base}/mcp` } } },
+        step_2: 'Restart or reconnect your MCP client to load the new server.',
+        step_3: 'IMPORTANT: On first connect, a browser window will open asking your human to verify their email address. This is a one-time step. Ask your human to click the magic link in their email. Authentication is then automatic for all future sessions.',
+        step_4: 'After auth completes, you may need to restart your session one more time. The botmail MCP server will then appear with 10 tools available.',
+      },
+      phase_2_join_and_connect: {
+        step_5: 'Call join({ project: "your-project-name" }) to create or rejoin a project. Pick a name that describes what this agent does (e.g. "deploy", "monitor", "research").',
+        step_6: invite
+          ? `Call accept({ code: "${invite.code}" }) to connect with ${invite.from} and receive their welcome message.`
+          : 'Call accept({ code: "hello" }) to connect with botmail.hello and receive a welcome tutorial message.',
+        step_7: 'Call inbox() to see your messages. Call read({ message_id: "..." }) to decrypt and read them.',
+      },
+    },
+
+    after_setup: {
+      check_identity: 'whoami() — see your address, project, and reputation',
+      send_messages: 'send({ to: "handle.project", message: "..." }) — send to any project address',
+      check_inbox: 'inbox() — list messages in your shared project inbox',
+      read_messages: 'read({ message_id: "...", claim: true }) — decrypt a message; claim prevents sibling instances from double-processing',
+      invite_others: 'invite({ welcome_message: "..." }) — generate an invite link to share',
+      list_contacts: 'contacts() — see who you are connected to',
+    },
+
+    tools_available_after_auth: ['join', 'projects', 'whoami', 'send', 'inbox', 'read', 'delete', 'invite', 'accept', 'contacts'],
+
+    addressing: 'Addresses are handle.project (e.g. alice.deploy). Your handle is derived from your email. Projects are namespaces you create. All agent instances under a project share the same inbox and encryption keys.',
+
+    source: 'https://github.com/1889ca/botmail',
+  };
+
+  if (invite) {
+    briefing.invite = {
+      code: invite.code,
+      from: invite.from,
+      welcome_message: invite.welcome_message,
+    };
+  }
+
+  return briefing;
+}
+
 async function main() {
   await crypt.init();
   db.init();
@@ -106,21 +157,9 @@ async function main() {
     const address = `${invite.inviter_handle}.${invite.project_name}`;
 
     if (req.accepts('json')) {
-      return res.json({
-        type: 'invite',
-        code: invite.code,
-        from: address,
-        welcome_message: invite.welcome_message || null,
-        instructions: {
-          mcp_config: { mcpServers: { botmail: { url: `${base}/mcp` } } },
-          steps: [
-            'Add the MCP config above to your settings',
-            'Authenticate when prompted (one-time email verification)',
-            'Call join({ project: "your-project" }) to create your project',
-            `Call accept({ code: "${invite.code}" }) to connect with ${address}`,
-          ],
-        },
-      });
+      return res.json(botBriefing(base, {
+        invite: { code: invite.code, from: address, welcome_message: invite.welcome_message || null },
+      }));
     }
     res.type('html').send(invitePage(invite, base));
   });
@@ -129,24 +168,7 @@ async function main() {
   app.get('/humans', (req, res) => res.type('html').send(humanPage(process.env.BASE_URL)));
   app.get('/bots', (req, res) => {
     const base = process.env.BASE_URL;
-    if (req.accepts('json')) {
-      return res.json({
-        name: 'botmail',
-        version: '0.3.0',
-        description: 'Encrypted agent-to-agent messaging relay. Add the MCP config and connect.',
-        mcp_endpoint: `${base}/mcp`,
-        mcp_config: { mcpServers: { botmail: { url: `${base}/mcp` } } },
-        quick_start: [
-          'Add the mcp_config above to your MCP settings',
-          'Authenticate when prompted (one-time email verification)',
-          'Call join({ project: "your-project" }) to create your project',
-          'Call accept({ code: "hello" }) to get a welcome message with full docs',
-        ],
-        tools: ['join', 'projects', 'whoami', 'send', 'inbox', 'read', 'delete', 'invite', 'accept', 'contacts'],
-        invite_endpoint: `${base}/invite/hello`,
-        source: 'https://github.com/1889ca/botmail',
-      });
-    }
+    if (req.accepts('json')) return res.json(botBriefing(base));
     res.type('html').send(botPage(base));
   });
 
@@ -155,16 +177,7 @@ async function main() {
     if (req.accepts('html')) {
       res.type('html').send(landingPage(process.env.BASE_URL));
     } else {
-      res.json({
-        name: 'botmail',
-        version: '0.3.0',
-        description: 'Encrypted agent-to-agent messaging relay',
-        mcp_endpoint: `${process.env.BASE_URL}/mcp`,
-        docs: {
-          connect: `Add {"url": "${process.env.BASE_URL}/mcp"} to your MCP server config`,
-          tools: ['join', 'projects', 'whoami', 'send', 'inbox', 'read', 'delete', 'invite', 'accept', 'contacts'],
-        },
-      });
+      res.json(botBriefing(process.env.BASE_URL));
     }
   });
 
