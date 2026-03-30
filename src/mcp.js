@@ -8,11 +8,12 @@ import {
   createProject, listProjects, createInstance, touchInstance,
   storeMessage, listInbox, getMessage, markRead, claimMessage,
   deleteMessage as dbDeleteMessage, incrementMessagesSent,
-  findAccount as dbFindAccount,
+  findAccount as dbFindAccount, createInvite, listContacts,
 } from './db.js';
 import { generateKeypair, deriveAgentId, encryptMessage, decryptMessage, decryptPrivateKey } from './crypto.js';
 import { checkSendRate, recordMessageSend } from './ratelimit.js';
 import { maybeGraduate } from './reputation.js';
+import { acceptInvite, generateInviteCode } from './invites.js';
 
 const NAME_RE = /^[a-z0-9][a-z0-9-]{0,30}[a-z0-9]$/;
 
@@ -204,6 +205,58 @@ export function createMcpServer(account) {
       const result = dbDeleteMessage(message_id, session.project.id);
       if (result.changes === 0) return err('Message not found');
       return ok({ deleted: message_id });
+    }
+  );
+
+  server.tool(
+    'invite',
+    'Generate an invite link for your current project',
+    {
+      welcome_message: z.string().optional().describe('Optional message sent to people who accept the invite'),
+      max_uses: z.number().optional().describe('Max number of accepts (omit for unlimited)'),
+    },
+    async ({ welcome_message, max_uses }) => {
+      if (!session.project) return err('Call "join" first to select a project');
+      const code = generateInviteCode();
+      createInvite({
+        code,
+        projectId: session.project.id,
+        welcomeMessage: welcome_message,
+        maxUses: max_uses,
+        createdBy: account.id,
+      });
+      const url = `${process.env.BASE_URL}/invite/${code}`;
+      return ok({ code, url, address: `${account.handle}.${session.project.name}` });
+    }
+  );
+
+  server.tool(
+    'accept',
+    'Accept an invite code to connect with another project',
+    { code: z.string().describe('The invite code to accept') },
+    async ({ code }) => {
+      if (!session.project) return err('Call "join" first to select a project');
+      const proj = findProject(session.project.id);
+      proj._address = `${account.handle}.${session.project.name}`;
+      const result = acceptInvite(code, proj);
+      if (result.error) return err(result.error);
+      return ok(result);
+    }
+  );
+
+  server.tool(
+    'contacts',
+    'List projects you are connected to via invites',
+    {},
+    async () => {
+      if (!session.project) return err('Call "join" first to select a project');
+      const rows = listContacts(session.project.id);
+      return ok({
+        contacts: rows.map(c => ({
+          address: `${c.handle}.${c.project_name}`,
+          connected_at: c.created_at,
+        })),
+      });
     }
   );
 

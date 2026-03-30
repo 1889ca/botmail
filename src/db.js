@@ -102,6 +102,27 @@ export function init(dbPath = 'data/bmail.db') {
       FOREIGN KEY (recipient_project_id) REFERENCES projects(id)
     );
 
+    CREATE TABLE IF NOT EXISTS invites (
+      code TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      welcome_message TEXT,
+      max_uses INTEGER,
+      uses INTEGER DEFAULT 0,
+      created_by TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (project_id) REFERENCES projects(id),
+      FOREIGN KEY (created_by) REFERENCES accounts(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS contacts (
+      project_id TEXT NOT NULL,
+      contact_project_id TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      PRIMARY KEY (project_id, contact_project_id),
+      FOREIGN KEY (project_id) REFERENCES projects(id),
+      FOREIGN KEY (contact_project_id) REFERENCES projects(id)
+    );
+
     CREATE TABLE IF NOT EXISTS rate_limits (
       key TEXT NOT NULL,
       action TEXT NOT NULL,
@@ -317,4 +338,48 @@ export function purgeExpiredMessages() {
 
 export function purgeExpiredPendingAuth() {
   return db.prepare("DELETE FROM pending_auth WHERE datetime(created_at, '+10 minutes') < datetime('now')").run();
+}
+
+// --- Invites ---
+export function createInvite({ code, projectId, welcomeMessage, maxUses, createdBy }) {
+  db.prepare(`INSERT INTO invites (code, project_id, welcome_message, max_uses, created_by)
+    VALUES (?, ?, ?, ?, ?)`).run(code, projectId, welcomeMessage || null, maxUses || null, createdBy);
+}
+
+export function findInvite(code) {
+  return db.prepare(`
+    SELECT i.*, p.name as project_name, p.public_key, p.account_id,
+           a.handle as inviter_handle
+    FROM invites i
+    JOIN projects p ON p.id = i.project_id
+    JOIN accounts a ON a.id = p.account_id
+    WHERE i.code = ?
+  `).get(code);
+}
+
+export function incrementInviteUses(code) {
+  db.prepare('UPDATE invites SET uses = uses + 1 WHERE code = ?').run(code);
+}
+
+// --- Contacts ---
+export function addContact(projectId, contactProjectId) {
+  const insert = db.prepare('INSERT OR IGNORE INTO contacts (project_id, contact_project_id) VALUES (?, ?)');
+  insert.run(projectId, contactProjectId);
+  insert.run(contactProjectId, projectId);
+}
+
+export function listContacts(projectId) {
+  return db.prepare(`
+    SELECT c.contact_project_id, c.created_at,
+           p.name as project_name, a.handle
+    FROM contacts c
+    JOIN projects p ON p.id = c.contact_project_id
+    JOIN accounts a ON a.id = p.account_id
+    WHERE c.project_id = ?
+    ORDER BY c.created_at DESC
+  `).all(projectId);
+}
+
+export function findContact(projectId, contactProjectId) {
+  return db.prepare('SELECT * FROM contacts WHERE project_id = ? AND contact_project_id = ?').get(projectId, contactProjectId);
 }

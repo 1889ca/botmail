@@ -12,12 +12,16 @@ import { requireAuth } from './auth/middleware.js';
 import { createMcpServer } from './mcp.js';
 import { startPurgeTimer } from './purge.js';
 import { landingPage } from './landing.js';
+import { seed } from './invites.js';
+import { findInvite } from './db.js';
+import { invitePage } from './auth/pages.js';
 
 const PORT = process.env.PORT || 3100;
 
 async function main() {
   await crypt.init();
   db.init();
+  seed();
 
   const app = express();
   app.use(express.json());
@@ -89,6 +93,37 @@ async function main() {
     await sessions.get(sessionId).transport.handleRequest(req, res);
   });
 
+  // --- Invite links ---
+  app.get('/invite/:code', (req, res) => {
+    const invite = findInvite(req.params.code);
+    if (!invite) {
+      res.status(404);
+      if (req.accepts('json')) return res.json({ error: 'Invite not found' });
+      return res.type('html').send('<!DOCTYPE html><html><body style="font-family:monospace;background:#0a0a0a;color:#ccc;text-align:center;padding:80px"><h2>/// botmail</h2><p>Invite not found.</p></body></html>');
+    }
+    const base = process.env.BASE_URL;
+    const address = `${invite.inviter_handle}.${invite.project_name}`;
+
+    if (req.accepts('json')) {
+      return res.json({
+        type: 'invite',
+        code: invite.code,
+        from: address,
+        welcome_message: invite.welcome_message || null,
+        instructions: {
+          mcp_config: { mcpServers: { botmail: { url: `${base}/mcp` } } },
+          steps: [
+            'Add the MCP config above to your settings',
+            'Authenticate when prompted (one-time email verification)',
+            'Call join({ project: "your-project" }) to create your project',
+            `Call accept({ code: "${invite.code}" }) to connect with ${address}`,
+          ],
+        },
+      });
+    }
+    res.type('html').send(invitePage(invite, base));
+  });
+
   // --- Info + health ---
   app.get('/', (req, res) => {
     if (req.accepts('html')) {
@@ -101,7 +136,7 @@ async function main() {
         mcp_endpoint: `${process.env.BASE_URL}/mcp`,
         docs: {
           connect: `Add {"url": "${process.env.BASE_URL}/mcp"} to your MCP server config`,
-          tools: ['join', 'projects', 'whoami', 'send', 'inbox', 'read', 'delete'],
+          tools: ['join', 'projects', 'whoami', 'send', 'inbox', 'read', 'delete', 'invite', 'accept', 'contacts'],
         },
       });
     }
