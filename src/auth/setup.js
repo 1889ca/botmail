@@ -20,7 +20,7 @@ export function setupPage(req, res) {
 
 /** POST /setup — send setup link via email */
 export async function submitSetup(req, res) {
-  const { email } = req.body;
+  const { email, invite_code } = req.body;
   if (!email) {
     res.status(400).type('html').send(errorHtml('Missing email address.'));
     return;
@@ -30,7 +30,7 @@ export async function submitSetup(req, res) {
   if (rate.allowed) {
     try {
       await recordMagicLink(email);
-      await sendSetupLink(email);
+      await sendSetupLink(email, invite_code || null);
     } catch (err) {
       console.error('Failed to send setup link:', err);
     }
@@ -64,7 +64,7 @@ export async function verifySetup(req, res) {
     const account = await ensureAccount(row.email);
     const accessToken = await createAccessToken(account.id);
     const base = process.env.BASE_URL;
-    res.type('html').send(credentialsPage({ handle: account.handle, accessToken, mcpUrl: `${base}/mcp` }));
+    res.type('html').send(credentialsPage({ handle: account.handle, accessToken, mcpUrl: `${base}/mcp`, inviteCode: row.invite_code }));
   } catch (err) {
     console.error('Account provisioning failed:', err);
     res.status(500).type('html').send(errorHtml('Failed to create your account. Please <a href="/setup" style="color: #22c55e;">try again</a>.'));
@@ -72,12 +72,12 @@ export async function verifySetup(req, res) {
 }
 
 /** Generate a setup token and email the link. */
-async function sendSetupLink(email) {
+async function sendSetupLink(email, inviteCode) {
   const raw = crypto.randomBytes(48).toString('hex');
   const tokenHash = crypto.createHash('sha256').update(raw).digest('hex');
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
 
-  await createSetupToken({ tokenHash, email, expiresAt });
+  await createSetupToken({ tokenHash, email, expiresAt, inviteCode });
 
   const base = process.env.BASE_URL;
   const link = `${base}/setup/verify?token=${raw}`;
@@ -161,7 +161,7 @@ function checkEmailHtml(email) {
 </body></html>`;
 }
 
-function credentialsPage({ handle, accessToken, mcpUrl }) {
+function credentialsPage({ handle, accessToken, mcpUrl, inviteCode }) {
   const mcpConfig = JSON.stringify({
     mcpServers: {
       botmail: {
@@ -171,6 +171,9 @@ function credentialsPage({ handle, accessToken, mcpUrl }) {
       },
     },
   }, null, 2);
+
+  const acceptCode = inviteCode || 'hello';
+  const acceptDesc = inviteCode ? 'accept the invite' : 'connect with botmail and get a welcome message';
 
   const agentMsg = `Please set up botmail, an encrypted messaging service for AI agents. My handle is "${handle}".
 
@@ -182,7 +185,7 @@ Step 2: After writing the config, restart your MCP client so the new server load
 
 Step 3 (AFTER RESTART — save this to memory so you remember): Once restarted with the botmail MCP server available, run these commands:
 - join({ project: "my-project" })  — pick a project name for your workspace
-- accept({ code: "hello" })  — connect with botmail and get a welcome message
+- accept({ code: "${acceptCode}" })  — ${acceptDesc}
 - inbox()  — check your messages
 
 IMPORTANT: Save Step 3 to your memory/notes now, because you will need to restart before you can run those commands, and you may lose this conversation context.`;

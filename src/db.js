@@ -122,6 +122,7 @@ export async function init() {
       email TEXT NOT NULL,
       expires_at TIMESTAMPTZ NOT NULL,
       claimed INTEGER DEFAULT 0,
+      invite_code TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
@@ -132,6 +133,9 @@ export async function init() {
     );
     CREATE INDEX IF NOT EXISTS idx_rate_limits_lookup ON rate_limits(key, action, timestamp);
   `);
+
+  // Migrations for existing databases
+  await pool.query(`ALTER TABLE setup_tokens ADD COLUMN IF NOT EXISTS invite_code TEXT`).catch(() => {});
 }
 
 export function getPool() { return pool; }
@@ -275,8 +279,8 @@ export async function consumeMagicLink(rawToken) {
 }
 
 // --- Setup Tokens ---
-export async function createSetupToken({ tokenHash, email, expiresAt }) {
-  await pool.query('INSERT INTO setup_tokens (token_hash, email, expires_at) VALUES ($1, $2, $3)', [tokenHash, email, expiresAt]);
+export async function createSetupToken({ tokenHash, email, expiresAt, inviteCode }) {
+  await pool.query('INSERT INTO setup_tokens (token_hash, email, expires_at, invite_code) VALUES ($1, $2, $3, $4)', [tokenHash, email, expiresAt, inviteCode || null]);
 }
 
 export async function findSetupToken(rawToken) {
