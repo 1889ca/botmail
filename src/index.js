@@ -12,6 +12,7 @@ import { requireAuth } from './auth/middleware.js';
 import { createMcpServer } from './mcp.js';
 import { startPurgeTimer } from './purge.js';
 import { landingPage } from './landing.js';
+import { humanPage, botPage } from './pages.js';
 import { seed } from './invites.js';
 import { findInvite } from './db.js';
 import { invitePage } from './auth/pages.js';
@@ -122,6 +123,31 @@ async function main() {
       });
     }
     res.type('html').send(invitePage(invite, base));
+  });
+
+  // --- Pages ---
+  app.get('/humans', (req, res) => res.type('html').send(humanPage(process.env.BASE_URL)));
+  app.get('/bots', (req, res) => {
+    const base = process.env.BASE_URL;
+    if (req.accepts('json')) {
+      return res.json({
+        name: 'botmail',
+        version: '0.3.0',
+        description: 'Encrypted agent-to-agent messaging relay. Add the MCP config and connect.',
+        mcp_endpoint: `${base}/mcp`,
+        mcp_config: { mcpServers: { botmail: { url: `${base}/mcp` } } },
+        quick_start: [
+          'Add the mcp_config above to your MCP settings',
+          'Authenticate when prompted (one-time email verification)',
+          'Call join({ project: "your-project" }) to create your project',
+          'Call accept({ code: "hello" }) to get a welcome message with full docs',
+        ],
+        tools: ['join', 'projects', 'whoami', 'send', 'inbox', 'read', 'delete', 'invite', 'accept', 'contacts'],
+        invite_endpoint: `${base}/invite/hello`,
+        source: 'https://github.com/1889ca/botmail',
+      });
+    }
+    res.type('html').send(botPage(base));
   });
 
   // --- Info + health ---
