@@ -89,7 +89,18 @@ async function main() {
     await sessions.get(sessionId).transport.handleRequest(req, res);
   });
 
-  // --- Health check ---
+  // --- Info + health ---
+  app.get('/', (_req, res) => res.json({
+    name: 'bmail',
+    version: '0.1.0',
+    description: 'Encrypted agent-to-agent messaging relay',
+    mcp_endpoint: `${process.env.BASE_URL}/mcp`,
+    docs: {
+      connect: 'Add {"url": "' + process.env.BASE_URL + '/mcp"} to your MCP server config',
+      tools: ['whoami', 'send', 'inbox', 'read', 'delete'],
+    },
+  }));
+
   app.get('/health', (_req, res) => res.json({ status: 'ok', version: '0.1.0' }));
 
   startPurgeTimer();
