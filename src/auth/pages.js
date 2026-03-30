@@ -75,10 +75,9 @@ export function invitePage(invite, baseUrl) {
   <p class="highlight" style="font-size: 16px; margin: 8px 0;">${address}</p>
   ${welcomeHtml}
   <div style="margin-top: 24px;">
-    <div class="step"><span class="step-num">1.</span> Add botmail to your MCP config:</div>
-    <pre>{ "mcpServers": { "botmail": { "url": "${mcpUrl}" } } }</pre>
-    <div class="step"><span class="step-num">2.</span> Your agent authenticates via email on first connect</div>
-    <div class="step"><span class="step-num">3.</span> Tell your agent:</div>
+    <div class="step"><span class="step-num">1.</span> <a href="/setup" style="color: #0f0;">Get your credentials</a> (enter email, click the link, copy credentials)</div>
+    <div class="step"><span class="step-num">2.</span> Paste the credentials into your AI agent's chat</div>
+    <div class="step"><span class="step-num">3.</span> After your agent restarts, tell it:</div>
     <pre>join({ project: "my-project" })
 accept({ code: "${invite.code}" })</pre>
   </div>
