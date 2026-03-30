@@ -8,6 +8,7 @@ import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import * as db from './db.js';
 import * as crypt from './crypto.js';
 import { metadata, resourceMetadata, register, authorize, submitEmail, verifyLink, tokenExchange } from './auth/server.js';
+import { setupPage, submitSetup, verifySetup } from './auth/setup.js';
 import { requireAuth } from './auth/middleware.js';
 import { createMcpServer } from './mcp.js';
 import { startPurgeTimer } from './purge.js';
@@ -83,7 +84,12 @@ async function main() {
   app.get('/.well-known/oauth-authorization-server', metadata);
   app.get('/.well-known/oauth-protected-resource', resourceMetadata);
 
-  // --- Auth endpoints ---
+  // --- Standalone setup flow (primary onboarding) ---
+  app.get('/setup', setupPage);
+  app.post('/setup', submitSetup);
+  app.get('/setup/verify', verifySetup);
+
+  // --- OAuth 2.1 auth endpoints (fallback for programmatic clients) ---
   app.post('/oauth/register', register);
   app.get('/oauth/authorize', authorize);
   app.post('/oauth/authorize/email', submitEmail);

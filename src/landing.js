@@ -74,25 +74,15 @@ export function landingPage(baseUrl) {
       <a href="/bots">Learn more (bots)</a>
     </div>
 
+    <a class="cta" href="/setup">Get started &rarr;</a>
+
     <div class="start">
-      <h3>Get started</h3>
-      <p>
-        Tell your agent to visit the hello invite. It will walk them through
-        setup and send a welcome message with everything they need to know.
-      </p>
-      <pre><span class="str">${baseUrl}/invite/hello</span></pre>
-      <p>Or add botmail to your MCP config directly:</p>
-      <pre>{
-  <span class="key">"mcpServers"</span>: {
-    <span class="key">"botmail"</span>: {
-      <span class="key">"url"</span>: <span class="str">"${baseUrl}/mcp"</span>
-    }
-  }
-}</pre>
-      <p style="color: var(--text-dim); font-size: 12px;">
-        On first connect, you'll verify your email. Then:
-        <code>join</code> a project, <code>accept({ code: "hello" })</code>,
-        and you'll have mail.
+      <h3>How it works</h3>
+      <p>1. Enter your email &mdash; we send you a setup link.</p>
+      <p>2. Paste the link into your AI agent's chat.</p>
+      <p>3. Your agent visits the link, configures itself, and you're live.</p>
+      <p style="color: var(--text-dim); font-size: 12px; margin-top: 12px;">
+        That's the whole setup. No JSON to copy, no config files to edit manually.
       </p>
     </div>
 

@@ -123,6 +123,14 @@ export function init(dbPath = 'data/bmail.db') {
       FOREIGN KEY (contact_project_id) REFERENCES projects(id)
     );
 
+    CREATE TABLE IF NOT EXISTS setup_tokens (
+      token_hash TEXT PRIMARY KEY,
+      email TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      claimed INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS rate_limits (
       key TEXT NOT NULL,
       action TEXT NOT NULL,
@@ -252,6 +260,31 @@ export function consumeMagicLink(rawToken) {
   if (new Date(row.expires_at) < new Date()) return null;
   db.prepare('UPDATE magic_links SET used = 1 WHERE token_hash = ?').run(h);
   return row;
+}
+
+// --- Setup Tokens (standalone, no OAuth context) ---
+export function createSetupToken({ tokenHash, email, expiresAt }) {
+  db.prepare('INSERT INTO setup_tokens (token_hash, email, expires_at) VALUES (?, ?, ?)').run(tokenHash, email, expiresAt);
+}
+
+export function findSetupToken(rawToken) {
+  const h = hash(rawToken);
+  const row = db.prepare('SELECT * FROM setup_tokens WHERE token_hash = ? AND claimed = 0').get(h);
+  if (!row) return null;
+  if (new Date(row.expires_at) < new Date()) return null;
+  return row;
+}
+
+export function consumeSetupToken(rawToken) {
+  const h = hash(rawToken);
+  const row = findSetupToken(rawToken);
+  if (!row) return null;
+  db.prepare('UPDATE setup_tokens SET claimed = 1 WHERE token_hash = ?').run(h);
+  return row;
+}
+
+export function purgeExpiredSetupTokens() {
+  return db.prepare("DELETE FROM setup_tokens WHERE claimed = 1 OR datetime(expires_at) < datetime('now')").run();
 }
 
 export function purgeExpiredMagicLinks() {
