@@ -27,10 +27,10 @@ export function recordMagicLink(email) {
   recordRateEvent(email, 'magic_link');
 }
 
-/** Check if this agent can send a message. */
-export function checkSendRate(agentId, reputation) {
+/** Check if this account can send a message. */
+export function checkSendRate(accountId, reputation) {
   const limit = reputation === 'trusted' ? LIMITS.send_trusted : LIMITS.send_restricted;
-  const count = countRateEvents(agentId, 'message_send', limit.windowMinutes);
+  const count = countRateEvents(accountId, 'message_send', limit.windowMinutes);
   if (count >= limit.max) {
     return { allowed: false, retryAfterSeconds: limit.windowMinutes * 60 };
   }
@@ -38,6 +38,6 @@ export function checkSendRate(agentId, reputation) {
 }
 
 /** Record that a message was sent. */
-export function recordMessageSend(agentId) {
-  recordRateEvent(agentId, 'message_send');
+export function recordMessageSend(accountId) {
+  recordRateEvent(accountId, 'message_send');
 }

@@ -1,4 +1,4 @@
-/** Contract: SQLite persistence for agents, email auth, rate limits, and messages */
+/** Contract: SQLite persistence for accounts, projects, instances, and messages */
 
 import Database from 'better-sqlite3';
 import crypto from 'node:crypto';
@@ -15,15 +15,33 @@ export function init(dbPath = 'data/bmail.db') {
   db.pragma('foreign_keys = ON');
 
   db.exec(`
-    CREATE TABLE IF NOT EXISTS agents (
+    CREATE TABLE IF NOT EXISTS accounts (
       id TEXT PRIMARY KEY,
       email TEXT NOT NULL UNIQUE,
-      display_name TEXT,
-      public_key TEXT NOT NULL,
-      private_key_enc TEXT NOT NULL,
+      handle TEXT NOT NULL UNIQUE,
       reputation TEXT DEFAULT 'restricted',
       messages_sent INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS projects (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      public_key TEXT NOT NULL,
+      private_key_enc TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(account_id, name),
+      FOREIGN KEY (account_id) REFERENCES accounts(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS instances (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      label TEXT,
+      last_seen TEXT DEFAULT (datetime('now')),
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (project_id) REFERENCES projects(id)
     );
 
     CREATE TABLE IF NOT EXISTS oauth_clients (
@@ -55,7 +73,7 @@ export function init(dbPath = 'data/bmail.db') {
     CREATE TABLE IF NOT EXISTS auth_codes (
       code TEXT PRIMARY KEY,
       client_id TEXT NOT NULL,
-      agent_id TEXT NOT NULL,
+      account_id TEXT NOT NULL,
       redirect_uri TEXT NOT NULL,
       code_challenge TEXT,
       code_challenge_method TEXT,
@@ -65,21 +83,23 @@ export function init(dbPath = 'data/bmail.db') {
 
     CREATE TABLE IF NOT EXISTS access_tokens (
       token_hash TEXT PRIMARY KEY,
-      agent_id TEXT NOT NULL,
+      account_id TEXT NOT NULL,
       created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (agent_id) REFERENCES agents(id)
+      FOREIGN KEY (account_id) REFERENCES accounts(id)
     );
 
     CREATE TABLE IF NOT EXISTS messages (
       id TEXT PRIMARY KEY,
-      sender_id TEXT NOT NULL,
-      recipient_id TEXT NOT NULL,
+      sender_project_id TEXT NOT NULL,
+      sender_instance_id TEXT,
+      recipient_project_id TEXT NOT NULL,
       ciphertext TEXT NOT NULL,
       nonce TEXT NOT NULL,
       created_at TEXT DEFAULT (datetime('now')),
       read_at TEXT,
-      FOREIGN KEY (sender_id) REFERENCES agents(id),
-      FOREIGN KEY (recipient_id) REFERENCES agents(id)
+      claimed_by TEXT,
+      FOREIGN KEY (sender_project_id) REFERENCES projects(id),
+      FOREIGN KEY (recipient_project_id) REFERENCES projects(id)
     );
 
     CREATE TABLE IF NOT EXISTS rate_limits (
@@ -99,26 +119,76 @@ function uid() { return crypto.randomUUID().replace(/-/g, ''); }
 function token() { return crypto.randomBytes(48).toString('hex'); }
 function hash(val) { return crypto.createHash('sha256').update(val).digest('hex'); }
 
-// --- Agents ---
-export function createAgent({ id, email, displayName, publicKey, privateKeyEnc }) {
-  db.prepare(`INSERT INTO agents (id, email, display_name, public_key, private_key_enc)
-    VALUES (?, ?, ?, ?, ?)`).run(id, email, displayName, publicKey, privateKeyEnc);
+// --- Accounts ---
+export function createAccount({ id, email, handle }) {
+  db.prepare('INSERT INTO accounts (id, email, handle) VALUES (?, ?, ?)').run(id, email, handle);
 }
 
-export function findAgentByEmail(email) {
-  return db.prepare('SELECT * FROM agents WHERE email = ?').get(email);
+export function findAccount(id) {
+  return db.prepare('SELECT * FROM accounts WHERE id = ?').get(id);
 }
 
-export function findAgent(id) {
-  return db.prepare('SELECT * FROM agents WHERE id = ?').get(id);
+export function findAccountByEmail(email) {
+  return db.prepare('SELECT * FROM accounts WHERE email = ?').get(email);
 }
 
-export function incrementMessagesSent(agentId) {
-  db.prepare('UPDATE agents SET messages_sent = messages_sent + 1 WHERE id = ?').run(agentId);
+export function findAccountByHandle(handle) {
+  return db.prepare('SELECT * FROM accounts WHERE handle = ?').get(handle);
 }
 
-export function updateReputation(agentId, reputation) {
-  db.prepare('UPDATE agents SET reputation = ? WHERE id = ?').run(reputation, agentId);
+export function incrementMessagesSent(accountId) {
+  db.prepare('UPDATE accounts SET messages_sent = messages_sent + 1 WHERE id = ?').run(accountId);
+}
+
+export function updateReputation(accountId, reputation) {
+  db.prepare('UPDATE accounts SET reputation = ? WHERE id = ?').run(reputation, accountId);
+}
+
+// --- Projects ---
+export function createProject({ id, accountId, name, publicKey, privateKeyEnc }) {
+  db.prepare(`INSERT INTO projects (id, account_id, name, public_key, private_key_enc)
+    VALUES (?, ?, ?, ?, ?)`).run(id, accountId, name, publicKey, privateKeyEnc);
+}
+
+export function findProject(id) {
+  return db.prepare('SELECT * FROM projects WHERE id = ?').get(id);
+}
+
+export function findProjectByAddress(handle, projectName) {
+  return db.prepare(`
+    SELECT p.* FROM projects p
+    JOIN accounts a ON a.id = p.account_id
+    WHERE a.handle = ? AND p.name = ?
+  `).get(handle, projectName);
+}
+
+export function findProjectByAccountAndName(accountId, name) {
+  return db.prepare('SELECT * FROM projects WHERE account_id = ? AND name = ?').get(accountId, name);
+}
+
+export function listProjects(accountId) {
+  return db.prepare('SELECT * FROM projects WHERE account_id = ? ORDER BY created_at').all(accountId);
+}
+
+// --- Instances ---
+export function createInstance({ id, projectId, label }) {
+  db.prepare('INSERT INTO instances (id, project_id, label) VALUES (?, ?, ?)').run(id, projectId, label);
+}
+
+export function touchInstance(id) {
+  db.prepare("UPDATE instances SET last_seen = datetime('now') WHERE id = ?").run(id);
+}
+
+export function removeInstance(id) {
+  db.prepare('DELETE FROM instances WHERE id = ?').run(id);
+}
+
+export function listInstances(projectId) {
+  return db.prepare('SELECT * FROM instances WHERE project_id = ? ORDER BY last_seen DESC').all(projectId);
+}
+
+export function purgeStaleInstances() {
+  return db.prepare("DELETE FROM instances WHERE datetime(last_seen, '+24 hours') < datetime('now')").run();
 }
 
 // --- OAuth Clients ---
@@ -168,11 +238,11 @@ export function purgeExpiredMagicLinks() {
 }
 
 // --- Auth Codes ---
-export function createAuthCode({ clientId, agentId, redirectUri, codeChallenge, codeChallengeMethod }) {
+export function createAuthCode({ clientId, accountId, redirectUri, codeChallenge, codeChallengeMethod }) {
   const code = token();
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-  db.prepare(`INSERT INTO auth_codes (code, client_id, agent_id, redirect_uri, code_challenge, code_challenge_method, expires_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)`).run(code, clientId, agentId, redirectUri, codeChallenge, codeChallengeMethod, expiresAt);
+  db.prepare(`INSERT INTO auth_codes (code, client_id, account_id, redirect_uri, code_challenge, code_challenge_method, expires_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`).run(code, clientId, accountId, redirectUri, codeChallenge, codeChallengeMethod, expiresAt);
   return code;
 }
 
@@ -185,14 +255,14 @@ export function consumeAuthCode(code) {
 }
 
 // --- Access Tokens ---
-export function createAccessToken(agentId) {
+export function createAccessToken(accountId) {
   const raw = token();
-  db.prepare('INSERT INTO access_tokens (token_hash, agent_id) VALUES (?, ?)').run(hash(raw), agentId);
+  db.prepare('INSERT INTO access_tokens (token_hash, account_id) VALUES (?, ?)').run(hash(raw), accountId);
   return raw;
 }
 
 export function resolveToken(raw) {
-  return db.prepare('SELECT agent_id FROM access_tokens WHERE token_hash = ?').get(hash(raw));
+  return db.prepare('SELECT account_id FROM access_tokens WHERE token_hash = ?').get(hash(raw));
 }
 
 // --- Rate Limits ---
@@ -212,28 +282,33 @@ export function purgeOldRateEvents() {
 }
 
 // --- Messages ---
-export function storeMessage({ senderId, recipientId, ciphertext, nonce }) {
+export function storeMessage({ senderProjectId, senderInstanceId, recipientProjectId, ciphertext, nonce }) {
   const id = uid();
-  db.prepare(`INSERT INTO messages (id, sender_id, recipient_id, ciphertext, nonce)
-    VALUES (?, ?, ?, ?, ?)`).run(id, senderId, recipientId, ciphertext, nonce);
+  db.prepare(`INSERT INTO messages (id, sender_project_id, sender_instance_id, recipient_project_id, ciphertext, nonce)
+    VALUES (?, ?, ?, ?, ?, ?)`).run(id, senderProjectId, senderInstanceId, recipientProjectId, ciphertext, nonce);
   return id;
 }
 
-export function listInbox(agentId) {
-  return db.prepare(`SELECT id, sender_id, created_at, read_at FROM messages
-    WHERE recipient_id = ? ORDER BY created_at DESC`).all(agentId);
+export function listInbox(projectId) {
+  return db.prepare(`SELECT id, sender_project_id, sender_instance_id, created_at, read_at, claimed_by
+    FROM messages WHERE recipient_project_id = ? ORDER BY created_at DESC`).all(projectId);
 }
 
-export function getMessage(id, agentId) {
-  return db.prepare('SELECT * FROM messages WHERE id = ? AND recipient_id = ?').get(id, agentId);
+export function getMessage(id, projectId) {
+  return db.prepare('SELECT * FROM messages WHERE id = ? AND recipient_project_id = ?').get(id, projectId);
 }
 
 export function markRead(id) {
   db.prepare("UPDATE messages SET read_at = datetime('now') WHERE id = ?").run(id);
 }
 
-export function deleteMessage(id, agentId) {
-  return db.prepare('DELETE FROM messages WHERE id = ? AND recipient_id = ?').run(id, agentId);
+export function claimMessage(id, instanceId) {
+  const result = db.prepare('UPDATE messages SET claimed_by = ? WHERE id = ? AND claimed_by IS NULL').run(instanceId, id);
+  return result.changes > 0;
+}
+
+export function deleteMessage(id, projectId) {
+  return db.prepare('DELETE FROM messages WHERE id = ? AND recipient_project_id = ?').run(id, projectId);
 }
 
 export function purgeExpiredMessages() {

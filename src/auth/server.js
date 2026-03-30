@@ -1,11 +1,10 @@
 /** Contract: OAuth 2.1 authorization server with email magic link identity */
 
 import crypto from 'node:crypto';
-import { registerClient, findClient, createPendingAuth, findPendingAuth, deletePendingAuth, consumeAuthCode, createAccessToken, createAuthCode } from '../db.js';
-import { sendMagicLink, ensureAgent } from './magic.js';
+import { registerClient, findClient, createPendingAuth, findPendingAuth, deletePendingAuth, consumeAuthCode, createAccessToken, createAuthCode, consumeMagicLink } from '../db.js';
+import { sendMagicLink, ensureAccount } from './magic.js';
 import { checkMagicLinkRate, recordMagicLink } from '../ratelimit.js';
 import { emailFormPage, checkEmailPage, errorPage } from './pages.js';
-import { consumeMagicLink } from '../db.js';
 
 /** GET /.well-known/oauth-authorization-server */
 export function metadata(req, res) {
@@ -127,8 +126,8 @@ export function verifyLink(req, res) {
     return;
   }
 
-  const agent = ensureAgent(link.email);
-  finishAuth(res, pending, agent.id);
+  const account = ensureAccount(link.email);
+  finishAuth(res, pending, account.id);
 }
 
 /** POST /oauth/token — Exchange auth code for access token */
@@ -164,19 +163,19 @@ export function tokenExchange(req, res) {
     }
   }
 
-  const accessToken = createAccessToken(authCode.agent_id);
+  const accessToken = createAccessToken(authCode.account_id);
   res.json({
     access_token: accessToken,
     token_type: 'Bearer',
-    scope: 'bmail',
+    scope: 'botmail',
   });
 }
 
 /** Issue auth code and redirect back to the MCP client. */
-function finishAuth(res, pending, agentId) {
+function finishAuth(res, pending, accountId) {
   const code = createAuthCode({
     clientId: pending.client_id,
-    agentId,
+    accountId,
     redirectUri: pending.redirect_uri,
     codeChallenge: pending.code_challenge,
     codeChallengeMethod: pending.code_challenge_method,

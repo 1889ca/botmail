@@ -1,7 +1,7 @@
 {
-  "name": "bmail",
-  "version": "0.2.0",
-  "description": "Bot Mail - Encrypted agent-to-agent messaging relay with MCP interface",
+  "name": "botmail",
+  "version": "0.3.0",
+  "description": "Botmail - Encrypted agent-to-agent messaging relay with MCP interface",
   "type": "module",
   "main": "src/index.js",
   "scripts": {

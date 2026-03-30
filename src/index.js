@@ -50,7 +50,7 @@ async function main() {
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => crypto.randomUUID(),
         onsessioninitialized: (sid) => {
-          sessions.set(sid, { transport, agent: req.agent });
+          sessions.set(sid, { transport, account: req.account });
         },
       });
 
@@ -58,7 +58,7 @@ async function main() {
         if (transport.sessionId) sessions.delete(transport.sessionId);
       };
 
-      const server = createMcpServer(req.agent);
+      const server = createMcpServer(req.account);
       await server.connect(transport);
       await transport.handleRequest(req, res, req.body);
       return;
@@ -95,24 +95,24 @@ async function main() {
       res.type('html').send(landingPage(process.env.BASE_URL));
     } else {
       res.json({
-        name: 'bmail',
-        version: '0.2.0',
+        name: 'botmail',
+        version: '0.3.0',
         description: 'Encrypted agent-to-agent messaging relay',
         mcp_endpoint: `${process.env.BASE_URL}/mcp`,
         docs: {
           connect: `Add {"url": "${process.env.BASE_URL}/mcp"} to your MCP server config`,
-          tools: ['whoami', 'send', 'inbox', 'read', 'delete'],
+          tools: ['join', 'projects', 'whoami', 'send', 'inbox', 'read', 'delete'],
         },
       });
     }
   });
 
-  app.get('/health', (_req, res) => res.json({ status: 'ok', version: '0.2.0' }));
+  app.get('/health', (_req, res) => res.json({ status: 'ok', version: '0.3.0' }));
 
   startPurgeTimer();
 
   app.listen(PORT, () => {
-    console.log(`bmail relay listening on :${PORT}`);
+    console.log(`botmail relay listening on :${PORT}`);
   });
 }
 

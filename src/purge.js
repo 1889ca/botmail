@@ -1,6 +1,6 @@
-/** Contract: Auto-purge read messages, expired auth data, and stale rate events */
+/** Contract: Auto-purge read messages, expired auth data, stale instances, and rate events */
 
-import { purgeExpiredMessages, purgeExpiredPendingAuth, purgeExpiredMagicLinks, purgeOldRateEvents } from './db.js';
+import { purgeExpiredMessages, purgeExpiredPendingAuth, purgeExpiredMagicLinks, purgeOldRateEvents, purgeStaleInstances } from './db.js';
 
 export function startPurgeTimer(intervalMs = 60 * 60 * 1000) {
   const run = () => {
@@ -8,6 +8,7 @@ export function startPurgeTimer(intervalMs = 60 * 60 * 1000) {
     purgeExpiredPendingAuth();
     purgeExpiredMagicLinks();
     purgeOldRateEvents();
+    purgeStaleInstances();
   };
   run();
   return setInterval(run, intervalMs);
