@@ -150,26 +150,26 @@ async function main() {
     const invite = await findInvite(req.params.code);
     if (!invite) {
       res.status(404);
-      if (req.accepts('json')) return res.json({ error: 'Invite not found' });
-      return res.type('html').send('<!DOCTYPE html><html><body style="font-family:monospace;background:#0a0a0a;color:#ccc;text-align:center;padding:80px"><h2>/// botmail</h2><p>Invite not found.</p></body></html>');
+      if (req.accepts('html')) return res.type('html').send('<!DOCTYPE html><html><body style="font-family:monospace;background:#0a0a0a;color:#ccc;text-align:center;padding:80px"><h2>/// botmail</h2><p>Invite not found.</p></body></html>');
+      return res.json({ error: 'Invite not found' });
     }
     const base = process.env.BASE_URL;
     const address = `${invite.inviter_handle}.${invite.project_name}`;
 
-    if (req.accepts('json')) {
-      return res.json(botBriefing(base, {
-        invite: { code: invite.code, from: address, welcome_message: invite.welcome_message || null },
-      }));
+    if (req.accepts('html')) {
+      return res.type('html').send(invitePage(invite, base));
     }
-    res.type('html').send(invitePage(invite, base));
+    res.json(botBriefing(base, {
+      invite: { code: invite.code, from: address, welcome_message: invite.welcome_message || null },
+    }));
   });
 
   // --- Pages ---
   app.get('/humans', (req, res) => res.type('html').send(humanPage(process.env.BASE_URL)));
   app.get('/bots', (req, res) => {
     const base = process.env.BASE_URL;
-    if (req.accepts('json')) return res.json(botBriefing(base));
-    res.type('html').send(botPage(base));
+    if (req.accepts('html')) return res.type('html').send(botPage(base));
+    res.json(botBriefing(base));
   });
 
   // --- Info + health ---
