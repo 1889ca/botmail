@@ -5,6 +5,7 @@ import { registerClient, findClient, createPendingAuth, findPendingAuth, deleteP
 import { sendMagicLink, ensureAccount } from './magic.js';
 import { checkMagicLinkRate, recordMagicLink } from '../ratelimit.js';
 import { emailFormPage, checkEmailPage, errorPage } from './pages.js';
+import { setSessionCookie, getSessionAccount } from './session.js';
 
 /** GET /.well-known/oauth-authorization-server */
 export function metadata(req, res) {
@@ -66,14 +67,23 @@ export async function authorize(req, res) {
     return;
   }
 
-  const pendingId = await createPendingAuth({
+  const pending = {
     clientId: client_id,
     redirectUri: redirect_uri,
     state,
     codeChallenge: code_challenge,
     codeChallengeMethod: code_challenge_method,
-  });
+  };
 
+  // Auto-approve if browser has a valid session cookie
+  const account = await getSessionAccount(req);
+  if (account) {
+    const pendingId = await createPendingAuth(pending);
+    const pendingRow = await findPendingAuth(pendingId);
+    return finishAuth(res, pendingRow, account.id);
+  }
+
+  const pendingId = await createPendingAuth(pending);
   res.type('html').send(emailFormPage(pendingId));
 }
 
@@ -127,6 +137,7 @@ export async function verifyLink(req, res) {
   }
 
   const account = await ensureAccount(link.email);
+  setSessionCookie(res, account.id);
   await finishAuth(res, pending, account.id);
 }
 

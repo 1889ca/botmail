@@ -5,6 +5,7 @@ import { Resend } from 'resend';
 import { createSetupToken, consumeSetupToken, createAccessToken } from '../db.js';
 import { ensureAccount } from './magic.js';
 import { checkMagicLinkRate, recordMagicLink } from '../ratelimit.js';
+import { setSessionCookie } from './session.js';
 
 let resend;
 function getResend() {
@@ -64,6 +65,7 @@ export async function verifySetup(req, res) {
     const account = await ensureAccount(row.email);
     const accessToken = await createAccessToken(account.id);
     const base = process.env.BASE_URL;
+    setSessionCookie(res, account.id);
     res.type('html').send(credentialsPage({ handle: account.handle, accessToken, mcpUrl: `${base}/mcp`, inviteCode: row.invite_code }));
   } catch (err) {
     console.error('Account provisioning failed:', err);

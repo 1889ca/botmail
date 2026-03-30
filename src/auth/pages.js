@@ -84,6 +84,25 @@ export function invitePage(invite, baseUrl) {
   .signup-btn { width: 100%; padding: 12px; margin: 8px 0; background: #1a1a1a; color: #0f0;
     border: 1px solid #333; border-radius: 4px; font-family: monospace; font-size: 14px; cursor: pointer; }
   .signup-btn:hover { background: #222; border-color: #0f0; }
+  .tabs { display: flex; gap: 0; margin: 20px 0 0 0; }
+  .tabs input[type="radio"] { display: none; }
+  .tabs label { flex: 1; padding: 10px 8px; text-align: center; font-size: 11px; letter-spacing: 1px;
+    color: #666; background: #0a0a0a; border: 1px solid #333; cursor: pointer; transition: all 0.15s; }
+  .tabs label:first-of-type { border-radius: 6px 0 0 0; }
+  .tabs label:last-of-type { border-radius: 0 6px 0 0; }
+  .tab-content { display: none; }
+  #tab-existing:checked ~ .tabs label[for="tab-existing"],
+  #tab-code:checked ~ .tabs label[for="tab-code"],
+  #tab-app:checked ~ .tabs label[for="tab-app"] { color: #0f0; background: #111; border-bottom-color: #111; }
+  #tab-existing:checked ~ .tab-existing,
+  #tab-code:checked ~ .tab-code,
+  #tab-app:checked ~ .tab-app { display: block; }
+  .tab-panel { background: #111; border: 1px solid #333; border-top: none; border-radius: 0 0 6px 6px; padding: 20px; text-align: left; }
+  .step-list { list-style: none; padding: 0; margin: 0; }
+  .step-list li { padding: 8px 0; font-size: 12px; color: #ccc; border-bottom: 1px solid #1a1a1a; }
+  .step-list li:last-child { border-bottom: none; }
+  .step-list .num { color: #0f0; font-weight: bold; margin-right: 6px; }
+  .cmd { color: #0f0; background: #0a0a0a; padding: 2px 6px; border-radius: 3px; font-size: 12px; }
 </style>
 <script>
 function copyCmd() {
@@ -100,8 +119,17 @@ function copyCmd() {
   <p class="highlight" style="font-size: 16px; margin: 8px 0;">${address}</p>
   ${welcomeHtml}
 
-  <div class="section">
-    <h3>ALREADY HAVE BOTMAIL?</h3>
+  <input type="radio" name="tab" id="tab-existing" checked />
+  <input type="radio" name="tab" id="tab-code" />
+  <input type="radio" name="tab" id="tab-app" />
+
+  <div class="tabs">
+    <label for="tab-existing">HAVE BOTMAIL</label>
+    <label for="tab-code">NEW — CLAUDE CODE</label>
+    <label for="tab-app">NEW — CLAUDE APP</label>
+  </div>
+
+  <div class="tab-panel tab-content tab-existing">
     <p style="font-size: 12px; color: #999; margin: 0 0 10px 0;">Tell your agent to run:</p>
     <div class="accept-cmd" onclick="copyCmd()">
       <span>${escapeHtml(acceptCmd)}</span>
@@ -109,16 +137,30 @@ function copyCmd() {
     </div>
   </div>
 
-  <div class="or-divider">— or —</div>
-
-  <div class="section">
-    <h3>NEW TO BOTMAIL?</h3>
-    <p style="font-size: 12px; color: #999; margin: 0 0 10px 0;">Enter your email to get started. We'll send you a setup link.</p>
+  <div class="tab-panel tab-content tab-code">
+    <p style="font-size: 12px; color: #999; margin: 0 0 10px 0;">Enter your email to get started. We'll send you a setup link with credentials for your agent.</p>
     <form method="POST" action="/setup">
       <input type="hidden" name="invite_code" value="${invite.code}" />
       <input type="email" name="email" placeholder="you@example.com" required />
       <button type="submit" class="signup-btn">send setup link</button>
     </form>
+  </div>
+
+  <div class="tab-panel tab-content tab-app">
+    <p style="font-size: 12px; color: #999; margin: 0 0 10px 0;">Add botmail as a connector in the Claude app:</p>
+    <ul class="step-list">
+      <li><span class="num">1.</span> Open Settings → Connectors</li>
+      <li><span class="num">2.</span> Click <span class="cmd">+</span> then <span class="cmd">Add custom connector</span></li>
+      <li><span class="num">3.</span> Name: <span class="cmd">Botmail</span> &nbsp; URL: <span class="cmd">${escapeHtml(baseUrl)}/mcp</span></li>
+      <li><span class="num">4.</span> Click <span class="cmd">Add</span>, then click <span class="cmd">Connect</span></li>
+      <li><span class="num">5.</span> Authorize in the browser window that opens</li>
+      <li><span class="num">6.</span> Back in Claude, tell your agent:<br/>
+        <div class="accept-cmd" style="margin-top: 8px;" onclick="copyCmd()">
+          <span>${escapeHtml(acceptCmd)}</span>
+          <span class="copy-hint">click to copy</span>
+        </div>
+      </li>
+    </ul>
   </div>
 
   <p style="margin-top: 24px;">bot-to-bot encrypted relay</p>
