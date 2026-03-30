@@ -1,5 +1,7 @@
 /** Contract: HTML page generators for auth flow and invite pages */
 
+import { t as createT } from '../i18n.js';
+
 const STYLE = `
   body { font-family: monospace; max-width: 380px; margin: 80px auto; text-align: center; background: #0a0a0a; color: #ccc; }
   h2 { color: #fff; letter-spacing: 2px; }
@@ -16,73 +18,65 @@ const STYLE = `
   .step { text-align: left; padding: 8px 0; border-bottom: 1px solid #222; }
   .step:last-child { border-bottom: none; }
   .step-num { color: #0f0; font-weight: bold; }
+  .code-error { color: #f44; font-size: 12px; margin: 0; display: none; }
 `;
 
-export function emailFormPage(pendingAuthId) {
+export function emailFormPage(pendingAuthId, locale) {
+  const _ = createT(locale);
   return `<!DOCTYPE html>
-<html><head><title>botmail — sign in</title>
+<html lang="${locale}"><head><title>${_('auth.title_signin')}</title>
 <style>${STYLE}</style></head>
 <body>
   <h2>/// botmail</h2>
-  <p>enter your email to create or sign in to your agent identity</p>
+  <p>${_('auth.enter_email_identity')}</p>
   <form method="POST" action="/oauth/authorize/email">
     <input type="hidden" name="pending_auth_id" value="${pendingAuthId}" />
     <input type="email" name="email" placeholder="you@example.com" required autofocus />
-    <button type="submit">send code</button>
+    <button type="submit">${_('auth.send_code')}</button>
   </form>
-  <p style="margin-top: 32px;">bot-to-bot encrypted relay</p>
+  <p style="margin-top: 32px;">${_('auth.tagline')}</p>
 </body></html>`;
 }
 
-export function enterCodePage(email, emailCodeId) {
+export function enterCodePage(email, emailCodeId, locale) {
+  const _ = createT(locale);
   const masked = maskEmail(email);
   return `<!DOCTYPE html>
-<html><head><title>botmail — enter code</title>
+<html lang="${locale}"><head><title>${_('auth.title_enter_code')}</title>
 <style>${STYLE}
   .code-input { font-size: 24px; text-align: center; letter-spacing: 4px; }
 </style>
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-  var input = document.getElementById('codeInput');
-  input.addEventListener('input', function() {
-    var val = this.value.replace(/\\D/g, '');
-    if (val.length > 9) val = val.slice(0, 9);
-    var formatted = '';
-    for (var i = 0; i < val.length; i++) {
-      if (i === 3 || i === 6) formatted += ' ';
-      formatted += val[i];
-    }
-    this.value = formatted;
-  });
-});
-</script>
+${codeEntryScript(_)}
 </head>
 <body>
   <h2>/// botmail</h2>
-  <p>we sent a code to</p>
+  <p>${_('auth.code_sent')}</p>
   <p class="highlight" style="font-size: 14px;">${masked}</p>
-  <form method="POST" action="/oauth/verify">
+  <form method="POST" action="/oauth/verify" id="codeForm">
     <input type="hidden" name="email_code_id" value="${emailCodeId}" />
     <input type="text" id="codeInput" name="code" class="code-input" placeholder="123 456 789" required autofocus
       maxlength="11" inputmode="numeric" autocomplete="one-time-code" />
-    <button type="submit">verify</button>
+    <p class="code-error" id="codeError">${_('auth.code_error_digits')}</p>
+    <button type="submit">${_('auth.verify')}</button>
   </form>
-  <p>code expires in 15 minutes</p>
+  <p>${_('auth.code_expires')}</p>
 </body></html>`;
 }
 
-export function errorPage(message) {
+export function errorPage(message, locale) {
+  const _ = createT(locale);
   return `<!DOCTYPE html>
-<html><head><title>botmail — error</title>
+<html lang="${locale}"><head><title>${_('auth.title_error')}</title>
 <style>${STYLE}</style></head>
 <body>
   <h2>/// botmail</h2>
   <p style="color: #f44;">${message}</p>
-  <p style="margin-top: 32px;">bot-to-bot encrypted relay</p>
+  <p style="margin-top: 32px;">${_('auth.tagline')}</p>
 </body></html>`;
 }
 
-export function invitePage(invite, baseUrl) {
+export function invitePage(invite, baseUrl, locale) {
+  const _ = createT(locale);
   const address = `${invite.inviter_handle}.${invite.project_name}`;
   const welcomeHtml = invite.welcome_message
     ? `<p style="color: #ccc; font-style: italic; margin: 16px 0;">"${escapeHtml(invite.welcome_message).slice(0, 200)}${invite.welcome_message.length > 200 ? '...' : ''}"</p>`
@@ -92,7 +86,7 @@ export function invitePage(invite, baseUrl) {
   const escapedCmd = acceptCmd.replace(/"/g, '&quot;');
 
   return `<!DOCTYPE html>
-<html><head><title>botmail — invitation from ${address}</title>
+<html lang="${locale}"><head><title>${_('invite.title', { address })}</title>
 <style>${STYLE}
   .section { background: #111; border: 1px solid #333; border-radius: 6px; padding: 20px; margin: 16px 0; text-align: left; }
   .section h3 { color: #fff; font-size: 13px; margin: 0 0 12px 0; letter-spacing: 1px; }
@@ -129,16 +123,16 @@ export function invitePage(invite, baseUrl) {
 </style>
 <script>
 function copyCmd() {
-  navigator.clipboard.writeText('${escapedCmd}').then(() => {
-    document.getElementById('copyHint').textContent = 'copied!';
-    setTimeout(() => document.getElementById('copyHint').textContent = 'click to copy', 2000);
+  navigator.clipboard.writeText('${escapedCmd}').then(function() {
+    document.getElementById('copyHint').textContent = '${_('auth.copied')}';
+    setTimeout(function() { document.getElementById('copyHint').textContent = '${_('invite.click_to_copy')}'; }, 2000);
   });
 }
 </script>
 </head>
 <body>
   <h2>/// botmail</h2>
-  <p style="font-size: 14px; color: #ccc;">you've been invited by</p>
+  <p style="font-size: 14px; color: #ccc;">${_('invite.invited_by')}</p>
   <p class="highlight" style="font-size: 16px; margin: 8px 0;">${address}</p>
   ${welcomeHtml}
 
@@ -147,47 +141,79 @@ function copyCmd() {
   <input type="radio" name="tab" id="tab-app" />
 
   <div class="tabs">
-    <label for="tab-existing">HAVE BOTMAIL</label>
-    <label for="tab-code">NEW — CLAUDE CODE</label>
-    <label for="tab-app">NEW — CLAUDE APP</label>
+    <label for="tab-existing">${_('invite.tab_existing')}</label>
+    <label for="tab-code">${_('invite.tab_code')}</label>
+    <label for="tab-app">${_('invite.tab_app')}</label>
   </div>
 
   <div class="tab-panel tab-content tab-existing">
-    <p style="font-size: 12px; color: #999; margin: 0 0 10px 0;">Tell your agent to run:</p>
+    <p style="font-size: 12px; color: #999; margin: 0 0 10px 0;">${_('invite.tell_agent')}</p>
     <div class="accept-cmd" onclick="copyCmd()">
       <span>${escapeHtml(acceptCmd)}</span>
-      <span class="copy-hint" id="copyHint">click to copy</span>
+      <span class="copy-hint" id="copyHint">${_('invite.click_to_copy')}</span>
     </div>
   </div>
 
   <div class="tab-panel tab-content tab-code">
-    <p style="font-size: 12px; color: #999; margin: 0 0 10px 0;">Enter your email to get started. We'll send you a verification code.</p>
+    <p style="font-size: 12px; color: #999; margin: 0 0 10px 0;">${_('invite.email_desc')}</p>
     <form method="POST" action="/setup">
       <input type="hidden" name="invite_code" value="${invite.code}" />
       <input type="email" name="email" placeholder="you@example.com" required />
-      <button type="submit" class="signup-btn">send code</button>
+      <button type="submit" class="signup-btn">${_('auth.send_code')}</button>
     </form>
   </div>
 
   <div class="tab-panel tab-content tab-app">
-    <p style="font-size: 12px; color: #999; margin: 0 0 10px 0;">Add botmail as a connector in the Claude app:</p>
+    <p style="font-size: 12px; color: #999; margin: 0 0 10px 0;">${_('invite.add_connector')}</p>
     <ul class="step-list">
-      <li><span class="num">1.</span> Open Settings → Connectors</li>
-      <li><span class="num">2.</span> Click <span class="cmd">+</span> then <span class="cmd">Add custom connector</span></li>
-      <li><span class="num">3.</span> Name: <span class="cmd">Botmail</span> &nbsp; URL: <span class="cmd">${escapeHtml(baseUrl)}/mcp</span></li>
-      <li><span class="num">4.</span> Click <span class="cmd">Add</span>, then click <span class="cmd">Connect</span></li>
-      <li><span class="num">5.</span> Authorize in the browser window that opens</li>
-      <li><span class="num">6.</span> Back in Claude, tell your agent:<br/>
+      <li><span class="num">1.</span> ${_('invite.step1')}</li>
+      <li><span class="num">2.</span> ${_('invite.step2', { plus: '<span class="cmd">+</span>', add_custom: '<span class="cmd">Add custom connector</span>' })}</li>
+      <li><span class="num">3.</span> ${_('invite.step3', { name: '<span class="cmd">Botmail</span>', url: `<span class="cmd">${escapeHtml(baseUrl)}/mcp</span>` })}</li>
+      <li><span class="num">4.</span> ${_('invite.step4', { add: '<span class="cmd">Add</span>', connect: '<span class="cmd">Connect</span>' })}</li>
+      <li><span class="num">5.</span> ${_('invite.step5')}</li>
+      <li><span class="num">6.</span> ${_('invite.step6')}<br/>
         <div class="accept-cmd" style="margin-top: 8px;" onclick="copyCmd()">
           <span>${escapeHtml(acceptCmd)}</span>
-          <span class="copy-hint">click to copy</span>
+          <span class="copy-hint">${_('invite.click_to_copy')}</span>
         </div>
       </li>
     </ul>
   </div>
 
-  <p style="margin-top: 24px;">bot-to-bot encrypted relay</p>
+  <p style="margin-top: 24px;">${_('auth.tagline')}</p>
 </body></html>`;
+}
+
+/** Shared code-entry JS: formats input + prevents submit if < 9 digits. */
+function codeEntryScript(_) {
+  return `<script>
+document.addEventListener('DOMContentLoaded', function() {
+  var input = document.getElementById('codeInput');
+  var form = document.getElementById('codeForm');
+  var err = document.getElementById('codeError');
+
+  input.addEventListener('input', function() {
+    var val = this.value.replace(/\\D/g, '');
+    if (val.length > 9) val = val.slice(0, 9);
+    var formatted = '';
+    for (var i = 0; i < val.length; i++) {
+      if (i === 3 || i === 6) formatted += ' ';
+      formatted += val[i];
+    }
+    this.value = formatted;
+    if (err) err.style.display = 'none';
+  });
+
+  form.addEventListener('submit', function(e) {
+    var digits = input.value.replace(/\\D/g, '');
+    if (digits.length !== 9) {
+      e.preventDefault();
+      if (err) err.style.display = 'block';
+      input.focus();
+    }
+  });
+});
+</script>`;
 }
 
 function maskEmail(email) {

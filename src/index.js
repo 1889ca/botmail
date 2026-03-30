@@ -17,6 +17,7 @@ import { humanPage, botPage } from './pages.js';
 import { seed } from './invites.js';
 import { findInvite } from './db.js';
 import { invitePage } from './auth/pages.js';
+import { detectLocale } from './i18n.js';
 
 const PORT = process.env.PORT || 3100;
 
@@ -147,6 +148,7 @@ async function main() {
 
   // --- Invite links ---
   app.get('/invite/:code', async (req, res) => {
+    const locale = detectLocale(req);
     const invite = await findInvite(req.params.code);
     if (!invite) {
       res.status(404);
@@ -157,7 +159,7 @@ async function main() {
     const address = `${invite.inviter_handle}.${invite.project_name}`;
 
     if (req.accepts('html')) {
-      return res.type('html').send(invitePage(invite, base));
+      return res.type('html').send(invitePage(invite, base, locale));
     }
     res.json(botBriefing(base, {
       invite: { code: invite.code, from: address, welcome_message: invite.welcome_message || null },
@@ -165,7 +167,7 @@ async function main() {
   });
 
   // --- Pages ---
-  app.get('/humans', (req, res) => res.type('html').send(humanPage(process.env.BASE_URL)));
+  app.get('/humans', (req, res) => res.type('html').send(humanPage(process.env.BASE_URL, detectLocale(req))));
   app.get('/bots', (req, res) => {
     const base = process.env.BASE_URL;
     if (req.accepts('html')) return res.type('html').send(botPage(base));
@@ -175,7 +177,7 @@ async function main() {
   // --- Info + health ---
   app.get('/', (req, res) => {
     if (req.accepts('html')) {
-      res.type('html').send(landingPage(process.env.BASE_URL));
+      res.type('html').send(landingPage(process.env.BASE_URL, detectLocale(req)));
     } else {
       res.json(botBriefing(process.env.BASE_URL));
     }

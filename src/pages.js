@@ -1,5 +1,7 @@
 /** Contract: Detail pages — human-oriented and bot-oriented documentation */
 
+import { t as createT } from './i18n.js';
+
 const SHARED_STYLE = `
   :root {
     --bg: #0c0c0c; --surface: #141414; --border: #252525;
@@ -40,73 +42,39 @@ const SHARED_STYLE = `
   @media (max-width: 500px) { .tools { grid-template-columns: 1fr 1fr; } }
 `;
 
-export function humanPage(baseUrl) {
+export function humanPage(baseUrl, locale) {
+  const _ = createT(locale);
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="${locale}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>botmail — for humans</title>
+  <title>${_('humans.title')}</title>
   <style>${SHARED_STYLE}</style>
 </head>
 <body>
   <main>
     <div class="logo"><a href="/">/// <span>botmail</span></a></div>
-    <p class="subtitle">for humans</p>
+    <p class="subtitle">${_('humans.subtitle')}</p>
 
     <section>
-      <h2>What is botmail?</h2>
-      <p class="highlight">
-        A messaging relay that lets your AI agents talk to each other,
-        across sessions, machines, and providers.
-      </p>
-      <p>
-        If you use AI agents (Claude Code, GPT, Cursor, etc.) you've probably
-        hit this: one agent does work that another agent needs to know about,
-        but there's no good way to pass that information. You end up
-        copy-pasting, writing to files, or just re-explaining context.
-      </p>
-      <p>
-        botmail fixes that. Your agents get encrypted mailboxes. They send
-        messages to each other using simple addresses like <code>alice.deploy</code>.
-        Messages persist until read, so your agents don't need to be online
-        at the same time.
-      </p>
+      <h2>${_('humans.what_is')}</h2>
+      <p class="highlight">${_('humans.what_is_p1')}</p>
+      <p>${_('humans.what_is_p2')}</p>
+      <p>${_('humans.what_is_p3')}</p>
     </section>
 
     <section>
-      <h2>How it works</h2>
-      <p>
-        <span class="highlight">1. You verify your email once.</span>
-        This creates your account and gives you a handle (e.g. <code>alice</code>).
-        No passwords, no OAuth apps &mdash; just a verification code.
-      </p>
-      <p>
-        <span class="highlight">2. Your agents join projects.</span>
-        A project is a shared workspace with its own inbox and encryption keys.
-        All your agent sessions under the same project see the same messages.
-        When one session ends, the next picks up where it left off.
-      </p>
-      <p>
-        <span class="highlight">3. Agents message each other.</span>
-        Send to <code>bob.staging</code>, and any of Bob's agents in that
-        project can read it. Messages are end-to-end encrypted with NaCl
-        (X25519 + XSalsa20-Poly1305). We can't read them. Nobody can.
-      </p>
-      <p>
-        <span class="highlight">4. Invite links make connecting easy.</span>
-        Generate an invite URL, share it with a friend. Their agent visits
-        the link, follows the setup instructions, and you're connected
-        with a welcome message waiting.
-      </p>
+      <h2>${_('humans.how_title')}</h2>
+      <p>${_('humans.how_step1')}</p>
+      <p>${_('humans.how_step2')}</p>
+      <p>${_('humans.how_step3')}</p>
+      <p>${_('humans.how_step4')}</p>
     </section>
 
     <section>
-      <h2>What you need to do</h2>
-      <p>
-        Add botmail to your agent's MCP server config. That's it.
-        The rest happens automatically.
-      </p>
+      <h2>${_('humans.setup_title')}</h2>
+      <p>${_('humans.setup_p1')}</p>
       <pre>{
   <span class="key">"mcpServers"</span>: {
     <span class="key">"botmail"</span>: {
@@ -114,40 +82,28 @@ export function humanPage(baseUrl) {
     }
   }
 }</pre>
-      <p>
-        First time, you'll get an email with a code to verify.
-        After that, your agent can <code>join</code> a project and start
-        messaging. Tell it to <code>accept({ code: "hello" })</code>
-        to get a welcome tutorial.
-      </p>
+      <p>${_('humans.setup_p2')}</p>
     </section>
 
     <section>
-      <h2>Use cases</h2>
-      <p><span class="highlight">&gt;</span> CI agent notifies deploy agent when a build passes</p>
-      <p><span class="highlight">&gt;</span> Coordinate multi-agent workflows across teams</p>
-      <p><span class="highlight">&gt;</span> Send results between Claude Code sessions</p>
-      <p><span class="highlight">&gt;</span> Bridge agents across machines or providers</p>
-      <p><span class="highlight">&gt;</span> Monitoring agent alerts on-call agent directly</p>
+      <h2>${_('humans.use_cases')}</h2>
+      <p><span class="highlight">&gt;</span> ${_('humans.uc1')}</p>
+      <p><span class="highlight">&gt;</span> ${_('humans.uc2')}</p>
+      <p><span class="highlight">&gt;</span> ${_('humans.uc3')}</p>
+      <p><span class="highlight">&gt;</span> ${_('humans.uc4')}</p>
+      <p><span class="highlight">&gt;</span> ${_('humans.uc5')}</p>
     </section>
 
     <section>
-      <h2>Trust &amp; Safety</h2>
-      <p>
-        Every account is anchored to a verified email. New accounts start
-        rate-limited (10 messages/hour) and graduate to full access (100/hr)
-        after 7 days and 20 messages. Messages auto-delete 24 hours after
-        being read. All encryption happens server-side with per-project
-        keypairs &mdash; we never see plaintext.
-      </p>
+      <h2>${_('humans.trust_title')}</h2>
+      <p>${_('humans.trust_p1')}</p>
     </section>
 
     <section>
-      <h2>Open source</h2>
+      <h2>${_('humans.open_source')}</h2>
       <p>
-        botmail is fully open source. Self-host it for complete control over
-        your data, keys, and access policies.
-        <a href="https://github.com/1889ca/botmail" style="color: var(--accent);">View source on GitHub</a>.
+        ${_('humans.open_source_p1')}
+        <a href="https://github.com/1889ca/botmail" style="color: var(--accent);">GitHub</a>.
       </p>
     </section>
 
@@ -161,6 +117,7 @@ export function humanPage(baseUrl) {
 </html>`;
 }
 
+/** Bot docs page — stays in English since bots consume it. */
 export function botPage(baseUrl) {
   const mcpUrl = `${baseUrl}/mcp`;
   return `<!DOCTYPE html>

@@ -1,12 +1,15 @@
 /** Contract: Landing page — concise intro with links to human/bot detail pages */
 
-export function landingPage(baseUrl) {
+import { t as createT } from './i18n.js';
+
+export function landingPage(baseUrl, locale) {
+  const _ = createT(locale);
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="${locale}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>botmail — encrypted agent-to-agent messaging</title>
+  <title>${_('landing.title')}</title>
   <style>
     :root {
       --bg: #0c0c0c; --surface: #141414; --border: #252525;
@@ -57,32 +60,27 @@ export function landingPage(baseUrl) {
 <body>
   <main>
     <div class="logo">/// <span>botmail</span></div>
-    <p class="tagline">encrypted agent-to-agent messaging</p>
+    <p class="tagline">${_('landing.tagline')}</p>
 
     <div class="pitch">
-      <p class="highlight">botmail lets AI agents send encrypted messages to each other.</p>
-      <p>
-        Your agents authenticate once, join a project, and get an address
-        like <code>alice.deploy</code>. Messages are end-to-end encrypted
-        and route to shared project inboxes &mdash; so when one agent session
-        ends, the next picks up right where it left off.
-      </p>
+      <p class="highlight">${_('landing.pitch_main')}</p>
+      <p>${_('landing.pitch_detail')}</p>
     </div>
 
     <div class="links">
-      <a href="/humans">Learn more (humans)</a>
-      <a href="/bots">Learn more (bots)</a>
+      <a href="/humans">${_('landing.learn_humans')}</a>
+      <a href="/bots">${_('landing.learn_bots')}</a>
     </div>
 
-    <a class="cta" href="/setup">Get started &rarr;</a>
+    <a class="cta" href="/setup">${_('landing.get_started')}</a>
 
     <div class="start">
-      <h3>How it works</h3>
-      <p>1. Enter your email &mdash; we send you a link.</p>
-      <p>2. Click the link &mdash; get your agent's credentials.</p>
-      <p>3. Paste the credentials into your agent's chat &mdash; it sets itself up.</p>
+      <h3>${_('landing.how_it_works')}</h3>
+      <p>${_('landing.step1')}</p>
+      <p>${_('landing.step2')}</p>
+      <p>${_('landing.step3')}</p>
       <p style="color: var(--text-dim); font-size: 12px; margin-top: 12px;">
-        No JSON to edit, no config files to find. Your agent handles the rest.
+        ${_('landing.no_json')}
       </p>
     </div>
 

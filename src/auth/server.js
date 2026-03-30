@@ -6,6 +6,7 @@ import { sendAuthCode, ensureAccount } from './magic.js';
 import { checkMagicLinkRate, recordMagicLink } from '../ratelimit.js';
 import { emailFormPage, enterCodePage, errorPage } from './pages.js';
 import { setSessionCookie, getSessionAccount } from './session.js';
+import { detectLocale, t as createT } from '../i18n.js';
 
 /** GET /.well-known/oauth-authorization-server */
 export function metadata(req, res) {
@@ -84,21 +85,23 @@ export async function authorize(req, res) {
   }
 
   const pendingId = await createPendingAuth(pending);
-  res.type('html').send(emailFormPage(pendingId));
+  res.type('html').send(emailFormPage(pendingId, detectLocale(req)));
 }
 
 /** POST /oauth/authorize/email — Handle email form submission, send auth code */
 export async function submitEmail(req, res) {
+  const locale = detectLocale(req);
+  const _ = createT(locale);
   const { email, pending_auth_id } = req.body;
 
   if (!email || !pending_auth_id) {
-    res.status(400).type('html').send(errorPage('Missing email or session.'));
+    res.status(400).type('html').send(errorPage(_('error.missing_session'), locale));
     return;
   }
 
   const pending = await findPendingAuth(pending_auth_id);
   if (!pending) {
-    res.status(400).type('html').send(errorPage('Invalid or expired session. Please start over.'));
+    res.status(400).type('html').send(errorPage(_('error.expired_session'), locale));
     return;
   }
 
@@ -108,33 +111,35 @@ export async function submitEmail(req, res) {
   if (rate.allowed) {
     try {
       await recordMagicLink(email);
-      emailCodeId = await sendAuthCode(email, { pendingAuthId: pending_auth_id });
+      emailCodeId = await sendAuthCode(email, { pendingAuthId: pending_auth_id, locale });
     } catch (err) {
       console.error('Failed to send auth code:', err);
     }
   }
 
-  res.type('html').send(enterCodePage(email, emailCodeId || crypto.randomUUID().replace(/-/g, '')));
+  res.type('html').send(enterCodePage(email, emailCodeId || crypto.randomUUID().replace(/-/g, ''), locale));
 }
 
 /** POST /oauth/verify — Verify email code */
 export async function verifyCode(req, res) {
+  const locale = detectLocale(req);
+  const _ = createT(locale);
   const { code, email_code_id } = req.body;
   if (!code || !email_code_id) {
-    res.status(400).type('html').send(errorPage('Missing verification code.'));
+    res.status(400).type('html').send(errorPage(_('error.missing_code'), locale));
     return;
   }
 
   const cleaned = code.replace(/\D/g, '');
   const emailCode = await consumeEmailCode(email_code_id, cleaned);
   if (!emailCode) {
-    res.status(400).type('html').send(errorPage('Invalid or expired code. Please start over.'));
+    res.status(400).type('html').send(errorPage(_('error.start_over'), locale));
     return;
   }
 
   const pending = await findPendingAuth(emailCode.pending_auth_id);
   if (!pending) {
-    res.status(400).type('html').send(errorPage('Auth session expired. Please start over.'));
+    res.status(400).type('html').send(errorPage(_('error.auth_expired'), locale));
     return;
   }
 

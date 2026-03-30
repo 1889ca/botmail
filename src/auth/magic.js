@@ -3,6 +3,7 @@
 import crypto from 'node:crypto';
 import { Resend } from 'resend';
 import { createEmailCode, findAccountByEmail, findAccountByHandle, createAccount } from '../db.js';
+import { t as createT } from '../i18n.js';
 
 let resend;
 function getResend() {
@@ -12,7 +13,8 @@ function getResend() {
 const FROM = process.env.RESEND_FROM_EMAIL || 'botmail <noreply@botmail.dev>';
 
 /** Generate a 9-digit auth code, store its hash, and email the code. Returns the emailCodeId. */
-export async function sendAuthCode(email, { pendingAuthId, inviteCode } = {}) {
+export async function sendAuthCode(email, { pendingAuthId, inviteCode, locale } = {}) {
+  const _ = createT(locale || 'en');
   const code = crypto.randomInt(100_000_000, 1_000_000_000).toString();
   const codeHash = crypto.createHash('sha256').update(code).digest('hex');
   const id = crypto.randomUUID().replace(/-/g, '');
@@ -25,14 +27,14 @@ export async function sendAuthCode(email, { pendingAuthId, inviteCode } = {}) {
   await getResend().emails.send({
     from: FROM,
     to: email,
-    subject: 'Your botmail code',
-    text: `Your botmail verification code:\n\n${formatted}\n\nThis code expires in 15 minutes.\n\nIf you didn't request this, ignore this email.`,
+    subject: _('email.subject'),
+    text: `${_('email.intro')}\n\n${formatted}\n\n${_('email.expiry')}\n\n${_('email.ignore')}`,
     html: `
       <div style="font-family: monospace; max-width: 480px; margin: 0 auto; padding: 32px; background: #0a0a0a; color: #ccc;">
-        <h2 style="color: #fff; letter-spacing: 2px;">/// botmail</h2>
-        <p>Your verification code:</p>
+        <h2 style="color: #fff; letter-spacing: 2px;">${_('email.heading')}</h2>
+        <p>${_('email.code_label')}</p>
         <p style="font-size: 32px; color: #0f0; letter-spacing: 8px; text-align: center; margin: 24px 0;">${formatted}</p>
-        <p style="color: #666; font-size: 12px;">This code expires in 15 minutes. If you didn't request this, ignore this email.</p>
+        <p style="color: #666; font-size: 12px;">${_('email.expiry')} ${_('email.ignore')}</p>
       </div>
     `,
   });
