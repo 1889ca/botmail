@@ -4,7 +4,7 @@ name: bmail
 services:
   - name: relay
     github:
-      repo: your-org/bmail
+      repo: 1889ca/bmail
       branch: main
       deploy_on_push: true
     build_command: npm ci --omit=dev
