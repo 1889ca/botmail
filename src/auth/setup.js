@@ -1,25 +1,17 @@
-/** Contract: Standalone setup flow — email → magic link → credentials page → agent configures */
+/** Contract: Standalone setup flow — email → auth code → credentials page → agent configures */
 
 import crypto from 'node:crypto';
-import { Resend } from 'resend';
-import { createSetupToken, consumeSetupToken, createAccessToken } from '../db.js';
-import { ensureAccount } from './magic.js';
+import { consumeEmailCode, createAccessToken } from '../db.js';
+import { sendAuthCode, ensureAccount } from './magic.js';
 import { checkMagicLinkRate, recordMagicLink } from '../ratelimit.js';
 import { setSessionCookie } from './session.js';
-
-let resend;
-function getResend() {
-  if (!resend) resend = new Resend(process.env.RESEND_API_KEY);
-  return resend;
-}
-const FROM = process.env.RESEND_FROM_EMAIL || 'botmail <noreply@botmail.dev>';
 
 /** GET /setup — email form */
 export function setupPage(req, res) {
   res.type('html').send(emailPage());
 }
 
-/** POST /setup — send setup link via email */
+/** POST /setup — send auth code via email */
 export async function submitSetup(req, res) {
   const { email, invite_code } = req.body;
   if (!email) {
@@ -27,87 +19,52 @@ export async function submitSetup(req, res) {
     return;
   }
 
+  let emailCodeId;
   const rate = await checkMagicLinkRate(email);
   if (rate.allowed) {
     try {
       await recordMagicLink(email);
-      await sendSetupLink(email, invite_code || null);
+      emailCodeId = await sendAuthCode(email, { inviteCode: invite_code || null });
     } catch (err) {
-      console.error('Failed to send setup link:', err);
+      console.error('Failed to send auth code:', err);
     }
   }
 
-  res.type('html').send(checkEmailHtml(email));
+  res.type('html').send(enterCodeHtml(email, emailCodeId || crypto.randomUUID().replace(/-/g, '')));
 }
 
-/** GET /setup/verify?token=xxx — provisions account, shows credentials to copy to agent */
+/** POST /setup/verify — verify code, provision account, show credentials */
 export async function verifySetup(req, res) {
-  const { token } = req.query;
-  if (!token) {
-    res.status(400).type('html').send(errorHtml('Missing verification token.'));
+  const { code, email_code_id } = req.body;
+  if (!code || !email_code_id) {
+    res.status(400).type('html').send(errorHtml('Missing verification code.'));
     return;
   }
 
-  let row;
+  const cleaned = code.replace(/\D/g, '');
+  let emailCode;
   try {
-    row = await consumeSetupToken(token);
+    emailCode = await consumeEmailCode(email_code_id, cleaned);
   } catch (err) {
-    console.error('consumeSetupToken failed:', err);
+    console.error('consumeEmailCode failed:', err);
     res.status(500).type('html').send(errorHtml('Something went wrong. Please try again.'));
     return;
   }
-  if (!row) {
-    res.status(400).type('html').send(errorHtml('This link is invalid, expired, or already used.<br/><a href="/setup" style="color: #22c55e;">Request a new one</a>'));
+  if (!emailCode) {
+    res.status(400).type('html').send(errorHtml('Invalid or expired code.<br/><a href="/setup" style="color: #22c55e;">Try again</a>'));
     return;
   }
 
   try {
-    const account = await ensureAccount(row.email);
+    const account = await ensureAccount(emailCode.email);
     const accessToken = await createAccessToken(account.id);
     const base = process.env.BASE_URL;
     setSessionCookie(res, account.id);
-    res.type('html').send(credentialsPage({ handle: account.handle, accessToken, mcpUrl: `${base}/mcp`, inviteCode: row.invite_code }));
+    res.type('html').send(credentialsPage({ handle: account.handle, accessToken, mcpUrl: `${base}/mcp`, inviteCode: emailCode.invite_code }));
   } catch (err) {
     console.error('Account provisioning failed:', err);
     res.status(500).type('html').send(errorHtml('Failed to create your account. Please <a href="/setup" style="color: #22c55e;">try again</a>.'));
   }
-}
-
-/** Generate a setup token and email the link. */
-async function sendSetupLink(email, inviteCode) {
-  const raw = crypto.randomBytes(48).toString('hex');
-  const tokenHash = crypto.createHash('sha256').update(raw).digest('hex');
-  const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-
-  await createSetupToken({ tokenHash, email, expiresAt, inviteCode });
-
-  const base = process.env.BASE_URL;
-  const link = `${base}/setup/verify?token=${raw}`;
-
-  await getResend().emails.send({
-    from: FROM,
-    to: email,
-    subject: 'Your botmail setup link',
-    text: [
-      'Click the link below to activate your botmail account:',
-      '',
-      link,
-      '',
-      'After clicking, you\'ll see your credentials to give to your AI agent.',
-      '',
-      'This link expires in 15 minutes.',
-      'If you didn\'t request this, ignore this email.',
-    ].join('\n'),
-    html: `
-      <div style="font-family: monospace; max-width: 480px; margin: 0 auto; padding: 32px; background: #0a0a0a; color: #ccc;">
-        <h2 style="color: #fff; letter-spacing: 2px;">/// botmail</h2>
-        <p>Click the link below to activate your account:</p>
-        <p><a href="${link}" style="color: #0f0; word-break: break-all;">${link}</a></p>
-        <p style="color: #999; font-size: 13px;">After clicking, you'll see your credentials to give to your AI agent.</p>
-        <p style="color: #666; font-size: 12px;">Expires in 15 minutes.</p>
-      </div>
-    `,
-  });
 }
 
 // --- HTML generators ---
@@ -117,9 +74,9 @@ const STYLE = `
     max-width: 480px; margin: 80px auto; text-align: center; background: #0c0c0c; color: #b0b0b0; padding: 24px; }
   h2 { color: #e8e8e8; letter-spacing: 2px; }
   .accent { color: #22c55e; }
-  input[type="email"] { width: 100%; padding: 12px; margin: 12px 0; background: #141414; color: #22c55e;
+  input[type="email"], input[type="text"] { width: 100%; padding: 12px; margin: 12px 0; background: #141414; color: #22c55e;
     border: 1px solid #252525; border-radius: 6px; font-family: inherit; font-size: 14px; box-sizing: border-box; }
-  input[type="email"]:focus { outline: none; border-color: #22c55e; }
+  input[type="email"]:focus, input[type="text"]:focus { outline: none; border-color: #22c55e; }
   button { width: 100%; padding: 14px; margin: 12px 0; background: #166534; color: #22c55e;
     border: 1px solid #22c55e; border-radius: 6px; font-family: inherit; font-size: 14px; cursor: pointer; font-weight: 600; }
   button:hover { background: #1a7a3a; }
@@ -138,28 +95,50 @@ function emailPage() {
   <p>enter your email to get started</p>
   <form method="POST" action="/setup">
     <input type="email" name="email" placeholder="you@example.com" required autofocus />
-    <button type="submit">send setup link</button>
+    <button type="submit">send code</button>
   </form>
-  <p class="dim" style="margin-top: 24px;">we'll email you a link. click it to get your agent's credentials.</p>
+  <p class="dim" style="margin-top: 24px;">we'll email you a code to verify your identity.</p>
 </body></html>`;
 }
 
-function checkEmailHtml(email) {
+function enterCodeHtml(email, emailCodeId) {
   const [local, domain] = email.split('@');
   const masked = local.length <= 2
     ? `${local[0]}***@${domain}`
     : `${local[0]}${'*'.repeat(local.length - 2)}${local[local.length - 1]}@${domain}`;
 
   return `<!DOCTYPE html>
-<html><head><title>botmail — check your email</title><style>${STYLE}</style></head>
+<html><head><title>botmail — enter code</title>
+<style>${STYLE}
+  .code-input { font-size: 24px; text-align: center; letter-spacing: 4px; }
+</style>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  var input = document.getElementById('codeInput');
+  input.addEventListener('input', function() {
+    var val = this.value.replace(/\\D/g, '');
+    if (val.length > 9) val = val.slice(0, 9);
+    var formatted = '';
+    for (var i = 0; i < val.length; i++) {
+      if (i === 3 || i === 6) formatted += ' ';
+      formatted += val[i];
+    }
+    this.value = formatted;
+  });
+});
+</script>
+</head>
 <body>
   <h2>/// <span class="accent">botmail</span></h2>
-  <p>we sent a link to</p>
+  <p>we sent a code to</p>
   <p class="accent" style="font-size: 14px;">${masked}</p>
-  <div class="box">
-    <p style="font-size: 13px;">Click the link in your email to activate your account and get your agent's credentials.</p>
-  </div>
-  <p class="dim">link expires in 15 minutes</p>
+  <form method="POST" action="/setup/verify">
+    <input type="hidden" name="email_code_id" value="${emailCodeId}" />
+    <input type="text" id="codeInput" name="code" class="code-input" placeholder="123 456 789" required autofocus
+      maxlength="11" inputmode="numeric" autocomplete="one-time-code" />
+    <button type="submit">verify</button>
+  </form>
+  <p class="dim">code expires in 15 minutes</p>
 </body></html>`;
 }
 

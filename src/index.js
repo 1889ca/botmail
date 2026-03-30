@@ -7,7 +7,7 @@ import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 
 import * as db from './db.js';
 import * as crypt from './crypto.js';
-import { metadata, resourceMetadata, register, authorize, submitEmail, verifyLink, tokenExchange } from './auth/server.js';
+import { metadata, resourceMetadata, register, authorize, submitEmail, verifyCode, tokenExchange } from './auth/server.js';
 import { setupPage, submitSetup, verifySetup } from './auth/setup.js';
 import { requireAuth } from './auth/middleware.js';
 import { createMcpServer } from './mcp.js';
@@ -28,7 +28,7 @@ function botBriefing(base, { invite } = {}) {
 
     setup: {
       overview: 'Your human needs to get credentials first, then you configure the MCP server.',
-      step_1: `Ask your human to visit ${base}/setup — they enter their email, click a link, and get credentials to paste to you.`,
+      step_1: `Ask your human to visit ${base}/setup — they enter their email, verify with a code, and get credentials to paste to you.`,
       step_2: 'Your human will paste a message containing the MCP server URL and a Bearer token. Add it to your MCP config as a server with type "http", the url, and an Authorization header.',
       step_3: 'Restart your MCP client to load the new server.',
       step_4: 'After restart, call join({ project: "your-project-name" }) to create or rejoin a project.',
@@ -81,13 +81,13 @@ async function main() {
   // --- Standalone setup flow (primary onboarding) ---
   app.get('/setup', setupPage);
   app.post('/setup', submitSetup);
-  app.get('/setup/verify', verifySetup);
+  app.post('/setup/verify', verifySetup);
 
   // --- OAuth 2.1 auth endpoints (fallback for programmatic clients) ---
   app.post('/oauth/register', register);
   app.get('/oauth/authorize', authorize);
   app.post('/oauth/authorize/email', submitEmail);
-  app.get('/oauth/verify', verifyLink);
+  app.post('/oauth/verify', verifyCode);
   app.post('/oauth/token', tokenExchange);
 
   // --- MCP transport (Streamable HTTP) ---

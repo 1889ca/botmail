@@ -1,10 +1,10 @@
-/** Contract: OAuth 2.1 authorization server with email magic link identity */
+/** Contract: OAuth 2.1 authorization server with email code identity */
 
 import crypto from 'node:crypto';
-import { registerClient, findClient, createPendingAuth, findPendingAuth, deletePendingAuth, consumeAuthCode, createAccessToken, createAuthCode, consumeMagicLink } from '../db.js';
-import { sendMagicLink, ensureAccount } from './magic.js';
+import { registerClient, findClient, createPendingAuth, findPendingAuth, deletePendingAuth, consumeAuthCode, createAccessToken, createAuthCode, consumeEmailCode } from '../db.js';
+import { sendAuthCode, ensureAccount } from './magic.js';
 import { checkMagicLinkRate, recordMagicLink } from '../ratelimit.js';
-import { emailFormPage, checkEmailPage, errorPage } from './pages.js';
+import { emailFormPage, enterCodePage, errorPage } from './pages.js';
 import { setSessionCookie, getSessionAccount } from './session.js';
 
 /** GET /.well-known/oauth-authorization-server */
@@ -87,7 +87,7 @@ export async function authorize(req, res) {
   res.type('html').send(emailFormPage(pendingId));
 }
 
-/** POST /oauth/authorize/email — Handle email form submission, send magic link */
+/** POST /oauth/authorize/email — Handle email form submission, send auth code */
 export async function submitEmail(req, res) {
   const { email, pending_auth_id } = req.body;
 
@@ -102,41 +102,43 @@ export async function submitEmail(req, res) {
     return;
   }
 
-  // Always show "check your email" — don't reveal rate limit status (prevents email enumeration)
+  // Always show "enter code" — don't reveal rate limit status (prevents email enumeration)
+  let emailCodeId;
   const rate = await checkMagicLinkRate(email);
   if (rate.allowed) {
     try {
       await recordMagicLink(email);
-      await sendMagicLink(email, pending_auth_id);
+      emailCodeId = await sendAuthCode(email, { pendingAuthId: pending_auth_id });
     } catch (err) {
-      console.error('Failed to send magic link:', err);
+      console.error('Failed to send auth code:', err);
     }
   }
 
-  res.type('html').send(checkEmailPage(email));
+  res.type('html').send(enterCodePage(email, emailCodeId || crypto.randomUUID().replace(/-/g, '')));
 }
 
-/** GET /oauth/verify — Handle magic link click */
-export async function verifyLink(req, res) {
-  const { token } = req.query;
-  if (!token) {
-    res.status(400).type('html').send(errorPage('Missing verification token.'));
+/** POST /oauth/verify — Verify email code */
+export async function verifyCode(req, res) {
+  const { code, email_code_id } = req.body;
+  if (!code || !email_code_id) {
+    res.status(400).type('html').send(errorPage('Missing verification code.'));
     return;
   }
 
-  const link = await consumeMagicLink(token);
-  if (!link) {
-    res.status(400).type('html').send(errorPage('This link is invalid or has expired. Please request a new one.'));
+  const cleaned = code.replace(/\D/g, '');
+  const emailCode = await consumeEmailCode(email_code_id, cleaned);
+  if (!emailCode) {
+    res.status(400).type('html').send(errorPage('Invalid or expired code. Please start over.'));
     return;
   }
 
-  const pending = await findPendingAuth(link.pending_auth_id);
+  const pending = await findPendingAuth(emailCode.pending_auth_id);
   if (!pending) {
     res.status(400).type('html').send(errorPage('Auth session expired. Please start over.'));
     return;
   }
 
-  const account = await ensureAccount(link.email);
+  const account = await ensureAccount(emailCode.email);
   setSessionCookie(res, account.id);
   await finishAuth(res, pending, account.id);
 }

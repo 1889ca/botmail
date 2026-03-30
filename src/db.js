@@ -132,6 +132,17 @@ export async function init() {
       timestamp TIMESTAMPTZ DEFAULT NOW()
     );
     CREATE INDEX IF NOT EXISTS idx_rate_limits_lookup ON rate_limits(key, action, timestamp);
+
+    CREATE TABLE IF NOT EXISTS email_codes (
+      id TEXT PRIMARY KEY,
+      code_hash TEXT NOT NULL,
+      email TEXT NOT NULL,
+      pending_auth_id TEXT,
+      invite_code TEXT,
+      expires_at TIMESTAMPTZ NOT NULL,
+      used INTEGER DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
   `);
 
   // Migrations for existing databases
@@ -261,50 +272,27 @@ export async function deletePendingAuth(id) {
   await pool.query('DELETE FROM pending_auth WHERE id = $1', [id]);
 }
 
-// --- Magic Links ---
-export async function createMagicLink({ tokenHash, email, pendingAuthId, expiresAt }) {
+// --- Email Codes ---
+export async function createEmailCode({ id, codeHash, email, pendingAuthId, inviteCode, expiresAt }) {
   await pool.query(
-    'INSERT INTO magic_links (token_hash, email, pending_auth_id, expires_at) VALUES ($1, $2, $3, $4)',
-    [tokenHash, email, pendingAuthId, expiresAt],
+    'INSERT INTO email_codes (id, code_hash, email, pending_auth_id, invite_code, expires_at) VALUES ($1, $2, $3, $4, $5, $6)',
+    [id, codeHash, email, pendingAuthId || null, inviteCode || null, expiresAt],
   );
 }
 
-export async function consumeMagicLink(rawToken) {
-  const h = hash(rawToken);
-  const r = await row('SELECT * FROM magic_links WHERE token_hash = $1 AND used = 0', [h]);
+export async function consumeEmailCode(id, rawCode) {
+  const r = await row('SELECT * FROM email_codes WHERE id = $1 AND used = 0', [id]);
   if (!r) return null;
   if (new Date(r.expires_at) < new Date()) return null;
-  await pool.query('UPDATE magic_links SET used = 1 WHERE token_hash = $1', [h]);
+  if (r.code_hash !== hash(rawCode)) return null;
+  await pool.query('UPDATE email_codes SET used = 1 WHERE id = $1', [id]);
   return r;
 }
 
-// --- Setup Tokens ---
-export async function createSetupToken({ tokenHash, email, expiresAt, inviteCode }) {
-  await pool.query('INSERT INTO setup_tokens (token_hash, email, expires_at, invite_code) VALUES ($1, $2, $3, $4)', [tokenHash, email, expiresAt, inviteCode || null]);
-}
-
-export async function findSetupToken(rawToken) {
-  const h = hash(rawToken);
-  const r = await row('SELECT * FROM setup_tokens WHERE token_hash = $1 AND claimed = 0', [h]);
-  if (!r) return null;
-  if (new Date(r.expires_at) < new Date()) return null;
-  return r;
-}
-
-export async function consumeSetupToken(rawToken) {
-  const h = hash(rawToken);
-  const r = await findSetupToken(rawToken);
-  if (!r) return null;
-  await pool.query('UPDATE setup_tokens SET claimed = 1 WHERE token_hash = $1', [h]);
-  return r;
-}
-
-export async function purgeExpiredSetupTokens() {
-  return run("DELETE FROM setup_tokens WHERE claimed = 1 OR expires_at < NOW()");
-}
-
-export async function purgeExpiredMagicLinks() {
-  return run("DELETE FROM magic_links WHERE used = 1 OR expires_at < NOW()");
+export async function purgeExpiredEmailCodes() {
+  await run("DELETE FROM email_codes WHERE used = 1 OR expires_at < NOW()");
+  await run("DELETE FROM magic_links WHERE used = 1 OR expires_at < NOW()");
+  await run("DELETE FROM setup_tokens WHERE claimed = 1 OR expires_at < NOW()");
 }
 
 // --- Auth Codes ---

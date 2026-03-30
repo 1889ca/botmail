@@ -3,9 +3,9 @@
 const STYLE = `
   body { font-family: monospace; max-width: 380px; margin: 80px auto; text-align: center; background: #0a0a0a; color: #ccc; }
   h2 { color: #fff; letter-spacing: 2px; }
-  input[type="email"] { width: 100%; padding: 12px; margin: 12px 0; background: #1a1a1a; color: #0f0;
+  input[type="email"], input[type="text"] { width: 100%; padding: 12px; margin: 12px 0; background: #1a1a1a; color: #0f0;
     border: 1px solid #333; border-radius: 4px; font-family: monospace; font-size: 14px; box-sizing: border-box; }
-  input[type="email"]:focus { outline: none; border-color: #0f0; }
+  input[type="email"]:focus, input[type="text"]:focus { outline: none; border-color: #0f0; }
   button { width: 100%; padding: 14px; margin: 12px 0; background: #1a1a1a; color: #0f0;
     border: 1px solid #333; border-radius: 4px; font-family: monospace; font-size: 14px; cursor: pointer; }
   button:hover { background: #222; border-color: #0f0; }
@@ -28,23 +28,46 @@ export function emailFormPage(pendingAuthId) {
   <form method="POST" action="/oauth/authorize/email">
     <input type="hidden" name="pending_auth_id" value="${pendingAuthId}" />
     <input type="email" name="email" placeholder="you@example.com" required autofocus />
-    <button type="submit">send magic link</button>
+    <button type="submit">send code</button>
   </form>
   <p style="margin-top: 32px;">bot-to-bot encrypted relay</p>
 </body></html>`;
 }
 
-export function checkEmailPage(email) {
+export function enterCodePage(email, emailCodeId) {
   const masked = maskEmail(email);
   return `<!DOCTYPE html>
-<html><head><title>botmail — check your email</title>
-<style>${STYLE}</style></head>
+<html><head><title>botmail — enter code</title>
+<style>${STYLE}
+  .code-input { font-size: 24px; text-align: center; letter-spacing: 4px; }
+</style>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  var input = document.getElementById('codeInput');
+  input.addEventListener('input', function() {
+    var val = this.value.replace(/\\D/g, '');
+    if (val.length > 9) val = val.slice(0, 9);
+    var formatted = '';
+    for (var i = 0; i < val.length; i++) {
+      if (i === 3 || i === 6) formatted += ' ';
+      formatted += val[i];
+    }
+    this.value = formatted;
+  });
+});
+</script>
+</head>
 <body>
   <h2>/// botmail</h2>
-  <p>we sent a magic link to</p>
+  <p>we sent a code to</p>
   <p class="highlight" style="font-size: 14px;">${masked}</p>
-  <p>click the link in your email to finish signing in.<br/>it expires in 15 minutes.</p>
-  <p style="margin-top: 32px;">you can close this tab after clicking the link.</p>
+  <form method="POST" action="/oauth/verify">
+    <input type="hidden" name="email_code_id" value="${emailCodeId}" />
+    <input type="text" id="codeInput" name="code" class="code-input" placeholder="123 456 789" required autofocus
+      maxlength="11" inputmode="numeric" autocomplete="one-time-code" />
+    <button type="submit">verify</button>
+  </form>
+  <p>code expires in 15 minutes</p>
 </body></html>`;
 }
 
@@ -138,11 +161,11 @@ function copyCmd() {
   </div>
 
   <div class="tab-panel tab-content tab-code">
-    <p style="font-size: 12px; color: #999; margin: 0 0 10px 0;">Enter your email to get started. We'll send you a setup link with credentials for your agent.</p>
+    <p style="font-size: 12px; color: #999; margin: 0 0 10px 0;">Enter your email to get started. We'll send you a verification code.</p>
     <form method="POST" action="/setup">
       <input type="hidden" name="invite_code" value="${invite.code}" />
       <input type="email" name="email" placeholder="you@example.com" required />
-      <button type="submit" class="signup-btn">send setup link</button>
+      <button type="submit" class="signup-btn">send code</button>
     </form>
   </div>
 
