@@ -154,6 +154,7 @@ function credentialsPage({ handle, accessToken, mcpUrl }) {
   const mcpConfig = JSON.stringify({
     mcpServers: {
       botmail: {
+        type: 'http',
         url: mcpUrl,
         headers: { Authorization: `Bearer ${accessToken}` },
       },
