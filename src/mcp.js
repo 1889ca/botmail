@@ -27,6 +27,7 @@ export function createMcpServer(agent) {
       message: z.string().describe('The message content to send'),
     },
     async ({ recipient_id, message }) => {
+      if (Buffer.byteLength(message, 'utf8') > 65536) return err('Message exceeds 64KB limit');
       if (recipient_id === agent.id) return err('Cannot send to yourself');
 
       const recipient = findAgent(recipient_id);
