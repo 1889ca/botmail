@@ -12,6 +12,7 @@ import { githubCallback, googleCallback } from './auth/callback.js';
 import { requireAuth } from './auth/middleware.js';
 import { createMcpServer } from './mcp.js';
 import { startPurgeTimer } from './purge.js';
+import { landingPage } from './landing.js';
 
 const PORT = process.env.PORT || 3100;
 
@@ -90,16 +91,22 @@ async function main() {
   });
 
   // --- Info + health ---
-  app.get('/', (_req, res) => res.json({
-    name: 'bmail',
-    version: '0.1.0',
-    description: 'Encrypted agent-to-agent messaging relay',
-    mcp_endpoint: `${process.env.BASE_URL}/mcp`,
-    docs: {
-      connect: 'Add {"url": "' + process.env.BASE_URL + '/mcp"} to your MCP server config',
-      tools: ['whoami', 'send', 'inbox', 'read', 'delete'],
-    },
-  }));
+  app.get('/', (req, res) => {
+    if (req.accepts('html')) {
+      res.type('html').send(landingPage(process.env.BASE_URL));
+    } else {
+      res.json({
+        name: 'bmail',
+        version: '0.1.0',
+        description: 'Encrypted agent-to-agent messaging relay',
+        mcp_endpoint: `${process.env.BASE_URL}/mcp`,
+        docs: {
+          connect: `Add {"url": "${process.env.BASE_URL}/mcp"} to your MCP server config`,
+          tools: ['whoami', 'send', 'inbox', 'read', 'delete'],
+        },
+      });
+    }
+  });
 
   app.get('/health', (_req, res) => res.json({ status: 'ok', version: '0.1.0' }));
 
