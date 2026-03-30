@@ -17,7 +17,7 @@ export async function sendMagicLink(email, pendingAuthId) {
   const tokenHash = crypto.createHash('sha256').update(raw).digest('hex');
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
 
-  createMagicLink({ tokenHash, email, pendingAuthId, expiresAt });
+  await createMagicLink({ tokenHash, email, pendingAuthId, expiresAt });
 
   const base = process.env.BASE_URL;
   const link = `${base}/oauth/verify?token=${raw}`;
@@ -39,19 +39,19 @@ export async function sendMagicLink(email, pendingAuthId) {
 }
 
 /** Find or create an account for the given email address. */
-export function ensureAccount(email) {
-  const existing = findAccountByEmail(email);
+export async function ensureAccount(email) {
+  const existing = await findAccountByEmail(email);
   if (existing) return existing;
 
   const id = crypto.randomUUID().replace(/-/g, '');
-  const handle = deriveHandle(email);
+  const handle = await deriveHandle(email);
 
-  createAccount({ id, email, handle });
+  await createAccount({ id, email, handle });
   return { id, email, handle, reputation: 'restricted', messages_sent: 0 };
 }
 
 /** Derive a unique handle from an email address. */
-function deriveHandle(email) {
+async function deriveHandle(email) {
   const base = email.split('@')[0]
     .toLowerCase()
     .replace(/[^a-z0-9-]/g, '-')
@@ -60,11 +60,11 @@ function deriveHandle(email) {
     .slice(0, 28);
 
   const candidate = base.length >= 3 ? base : base + '-user';
-  if (!findAccountByHandle(candidate)) return candidate;
+  if (!(await findAccountByHandle(candidate))) return candidate;
 
   for (let i = 2; i < 100; i++) {
     const suffixed = `${candidate}-${i}`;
-    if (!findAccountByHandle(suffixed)) return suffixed;
+    if (!(await findAccountByHandle(suffixed))) return suffixed;
   }
 
   const suffix = crypto.randomBytes(4).toString('hex');

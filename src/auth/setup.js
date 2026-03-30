@@ -26,10 +26,10 @@ export async function submitSetup(req, res) {
     return;
   }
 
-  const rate = checkMagicLinkRate(email);
+  const rate = await checkMagicLinkRate(email);
   if (rate.allowed) {
     try {
-      recordMagicLink(email);
+      await recordMagicLink(email);
       await sendSetupLink(email);
     } catch (err) {
       console.error('Failed to send setup link:', err);
@@ -40,7 +40,7 @@ export async function submitSetup(req, res) {
 }
 
 /** GET /setup/verify?token=xxx — dual-mode: HTML for humans, JSON for agents */
-export function verifySetup(req, res) {
+export async function verifySetup(req, res) {
   const { token } = req.query;
   if (!token) {
     res.status(400);
@@ -51,7 +51,7 @@ export function verifySetup(req, res) {
 
   const wantsJson = req.accepts(['html', 'json']) === 'json';
 
-  const existing = findSetupToken(token);
+  const existing = await findSetupToken(token);
   if (!existing) {
     res.status(400);
     if (wantsJson) return res.json({ error: 'Token is invalid, expired, or already claimed.' });
@@ -67,14 +67,14 @@ export function verifySetup(req, res) {
   }
 
   // JSON visit (agent) — provision account, issue token, consume
-  const row = consumeSetupToken(token);
+  const row = await consumeSetupToken(token);
   if (!row) {
     res.status(400).json({ error: 'Token is invalid, expired, or already claimed.' });
     return;
   }
 
-  const account = ensureAccount(row.email);
-  const accessToken = createAccessToken(account.id);
+  const account = await ensureAccount(row.email);
+  const accessToken = await createAccessToken(account.id);
   const base = process.env.BASE_URL;
 
   res.json({
@@ -103,7 +103,7 @@ async function sendSetupLink(email) {
   const tokenHash = crypto.createHash('sha256').update(raw).digest('hex');
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
 
-  createSetupToken({ tokenHash, email, expiresAt });
+  await createSetupToken({ tokenHash, email, expiresAt });
 
   const base = process.env.BASE_URL;
   const link = `${base}/setup/verify?token=${raw}`;

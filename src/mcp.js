@@ -34,17 +34,17 @@ export function createMcpServer(account) {
         return err('Project name must be 2-32 chars, lowercase alphanumeric and hyphens, cannot start/end with hyphen');
       }
 
-      let proj = findProjectByAccountAndName(account.id, project);
+      let proj = await findProjectByAccountAndName(account.id, project);
       if (!proj) {
         const kp = generateKeypair();
         const id = deriveAgentId(kp.publicKey);
         const privateKeyEnc = encryptPrivateKey(kp.privateKey, process.env.MASTER_KEY);
-        createProject({ id, accountId: account.id, name: project, publicKey: kp.publicKey, privateKeyEnc });
+        await createProject({ id, accountId: account.id, name: project, publicKey: kp.publicKey, privateKeyEnc });
         proj = { id, account_id: account.id, name: project, public_key: kp.publicKey, private_key_enc: privateKeyEnc };
       }
 
       const instanceId = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
-      createInstance({ id: instanceId, projectId: proj.id, label: label || null });
+      await createInstance({ id: instanceId, projectId: proj.id, label: label || null });
 
       session.project = proj;
       session.instance = { id: instanceId, label };
@@ -61,7 +61,7 @@ export function createMcpServer(account) {
     'List all projects under your account',
     {},
     async () => {
-      const projects = listProjects(account.id);
+      const projects = await listProjects(account.id);
       return ok({
         account: account.handle,
         projects: projects.map(p => ({
@@ -111,11 +111,11 @@ export function createMcpServer(account) {
       if (parts.length !== 2) return err('Address must be in handle.project format (e.g. "alice.deploy")');
       const [handle, projectName] = parts;
 
-      const recipient = findProjectByAddress(handle, projectName);
+      const recipient = await findProjectByAddress(handle, projectName);
       if (!recipient) return err(`Project "${to}" not found`);
       if (recipient.id === session.project.id) return err('Cannot send to yourself');
 
-      const rate = checkSendRate(account.id, account.reputation);
+      const rate = await checkSendRate(account.id, account.reputation);
       if (!rate.allowed) {
         return err(`Rate limit exceeded. Try again in ${Math.ceil(rate.retryAfterSeconds / 60)} minutes.`);
       }
@@ -123,7 +123,7 @@ export function createMcpServer(account) {
       const senderPrivKey = decryptPrivateKey(session.project.private_key_enc, process.env.MASTER_KEY);
       const { ciphertext, nonce } = encryptMessage(senderPrivKey, recipient.public_key, message);
 
-      const msgId = storeMessage({
+      const msgId = await storeMessage({
         senderProjectId: session.project.id,
         senderInstanceId: session.instance.id,
         recipientProjectId: recipient.id,
@@ -131,10 +131,10 @@ export function createMcpServer(account) {
         nonce,
       });
 
-      recordMessageSend(account.id);
-      incrementMessagesSent(account.id);
+      await recordMessageSend(account.id);
+      await incrementMessagesSent(account.id);
       account.messages_sent = (account.messages_sent || 0) + 1;
-      account.reputation = maybeGraduate(account);
+      account.reputation = await maybeGraduate(account);
 
       return ok({ message_id: msgId, to, status: 'sent' });
     }
@@ -146,17 +146,17 @@ export function createMcpServer(account) {
     {},
     async () => {
       if (!session.project) return err('Call "join" first to select a project');
-      const messages = listInbox(session.project.id);
+      const messages = await listInbox(session.project.id);
       return ok({
         address: `${account.handle}.${session.project.name}`,
         count: messages.length,
-        messages: messages.map(m => ({
+        messages: await Promise.all(messages.map(async m => ({
           id: m.id,
-          from: resolveSenderAddress(m.sender_project_id),
+          from: await resolveSenderAddress(m.sender_project_id),
           received_at: m.created_at,
           read: !!m.read_at,
           claimed_by: m.claimed_by || null,
-        })),
+        }))),
       });
     }
   );
@@ -171,24 +171,24 @@ export function createMcpServer(account) {
     async ({ message_id, claim }) => {
       if (!session.project) return err('Call "join" first to select a project');
 
-      const msg = getMessage(message_id, session.project.id);
+      const msg = await getMessage(message_id, session.project.id);
       if (!msg) return err('Message not found');
 
       if (claim) {
-        const claimed = claimMessage(message_id, session.instance.id);
+        const claimed = await claimMessage(message_id, session.instance.id);
         if (!claimed) return err('Message already claimed by another instance');
       }
 
-      const senderProject = findProject(msg.sender_project_id);
+      const senderProject = await findProject(msg.sender_project_id);
       if (!senderProject) return err('Sender project no longer exists');
 
       const recipientPrivKey = decryptPrivateKey(session.project.private_key_enc, process.env.MASTER_KEY);
       const plaintext = decryptMessage(recipientPrivKey, senderProject.public_key, msg.ciphertext, msg.nonce);
-      markRead(message_id);
+      await markRead(message_id);
 
       return ok({
         id: msg.id,
-        from: resolveSenderAddress(msg.sender_project_id),
+        from: await resolveSenderAddress(msg.sender_project_id),
         message: plaintext,
         received_at: msg.created_at,
         claimed_by: claim ? session.instance.id : (msg.claimed_by || null),
@@ -202,8 +202,8 @@ export function createMcpServer(account) {
     { message_id: z.string().describe('The message ID to delete') },
     async ({ message_id }) => {
       if (!session.project) return err('Call "join" first to select a project');
-      const result = dbDeleteMessage(message_id, session.project.id);
-      if (result.changes === 0) return err('Message not found');
+      const count = await dbDeleteMessage(message_id, session.project.id);
+      if (count === 0) return err('Message not found');
       return ok({ deleted: message_id });
     }
   );
@@ -218,7 +218,7 @@ export function createMcpServer(account) {
     async ({ welcome_message, max_uses }) => {
       if (!session.project) return err('Call "join" first to select a project');
       const code = generateInviteCode();
-      createInvite({
+      await createInvite({
         code,
         projectId: session.project.id,
         welcomeMessage: welcome_message,
@@ -236,9 +236,9 @@ export function createMcpServer(account) {
     { code: z.string().describe('The invite code to accept') },
     async ({ code }) => {
       if (!session.project) return err('Call "join" first to select a project');
-      const proj = findProject(session.project.id);
+      const proj = await findProject(session.project.id);
       proj._address = `${account.handle}.${session.project.name}`;
-      const result = acceptInvite(code, proj);
+      const result = await acceptInvite(code, proj);
       if (result.error) return err(result.error);
       return ok(result);
     }
@@ -250,9 +250,9 @@ export function createMcpServer(account) {
     {},
     async () => {
       if (!session.project) return err('Call "join" first to select a project');
-      const rows = listContacts(session.project.id);
+      const contactRows = await listContacts(session.project.id);
       return ok({
-        contacts: rows.map(c => ({
+        contacts: contactRows.map(c => ({
           address: `${c.handle}.${c.project_name}`,
           connected_at: c.created_at,
         })),
@@ -264,10 +264,10 @@ export function createMcpServer(account) {
 }
 
 /** Resolve a project ID to its handle.name address. */
-function resolveSenderAddress(projectId) {
-  const project = findProject(projectId);
+async function resolveSenderAddress(projectId) {
+  const project = await findProject(projectId);
   if (!project) return projectId;
-  const acct = dbFindAccount(project.account_id);
+  const acct = await dbFindAccount(project.account_id);
   return acct ? `${acct.handle}.${project.name}` : projectId;
 }
 

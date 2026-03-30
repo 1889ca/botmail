@@ -10,12 +10,12 @@ const LIMITS = {
 };
 
 /** Check if a magic link can be sent to this email. */
-export function checkMagicLinkRate(email) {
-  const shortCount = countRateEvents(email, 'magic_link', LIMITS.magic_link.windowMinutes);
+export async function checkMagicLinkRate(email) {
+  const shortCount = await countRateEvents(email, 'magic_link', LIMITS.magic_link.windowMinutes);
   if (shortCount >= LIMITS.magic_link.max) {
     return { allowed: false, retryAfterSeconds: LIMITS.magic_link.windowMinutes * 60 };
   }
-  const hourlyCount = countRateEvents(email, 'magic_link', LIMITS.magic_link_hourly.windowMinutes);
+  const hourlyCount = await countRateEvents(email, 'magic_link', LIMITS.magic_link_hourly.windowMinutes);
   if (hourlyCount >= LIMITS.magic_link_hourly.max) {
     return { allowed: false, retryAfterSeconds: LIMITS.magic_link_hourly.windowMinutes * 60 };
   }
@@ -23,14 +23,14 @@ export function checkMagicLinkRate(email) {
 }
 
 /** Record that a magic link was sent. */
-export function recordMagicLink(email) {
-  recordRateEvent(email, 'magic_link');
+export async function recordMagicLink(email) {
+  await recordRateEvent(email, 'magic_link');
 }
 
 /** Check if this account can send a message. */
-export function checkSendRate(accountId, reputation) {
+export async function checkSendRate(accountId, reputation) {
   const limit = reputation === 'trusted' ? LIMITS.send_trusted : LIMITS.send_restricted;
-  const count = countRateEvents(accountId, 'message_send', limit.windowMinutes);
+  const count = await countRateEvents(accountId, 'message_send', limit.windowMinutes);
   if (count >= limit.max) {
     return { allowed: false, retryAfterSeconds: limit.windowMinutes * 60 };
   }
@@ -38,6 +38,6 @@ export function checkSendRate(accountId, reputation) {
 }
 
 /** Record that a message was sent. */
-export function recordMessageSend(accountId) {
-  recordRateEvent(accountId, 'message_send');
+export async function recordMessageSend(accountId) {
+  await recordRateEvent(accountId, 'message_send');
 }

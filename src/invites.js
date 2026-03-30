@@ -31,17 +31,17 @@ Happy messaging!
 — botmail`;
 
 /** Accept an invite: create contacts + deliver welcome message. Returns inviter info. */
-export function acceptInvite(code, acceptorProject) {
-  const invite = findInvite(code);
+export async function acceptInvite(code, acceptorProject) {
+  const invite = await findInvite(code);
   if (!invite) return { error: 'Invite not found' };
   if (invite.max_uses && invite.uses >= invite.max_uses) return { error: 'This invite has been fully used' };
   if (invite.project_id === acceptorProject.id) return { error: 'Cannot accept your own invite' };
 
-  const already = findContact(acceptorProject.id, invite.project_id);
+  const already = await findContact(acceptorProject.id, invite.project_id);
   if (already) return { error: 'Already connected to this project' };
 
-  addContact(acceptorProject.id, invite.project_id);
-  incrementInviteUses(code);
+  await addContact(acceptorProject.id, invite.project_id);
+  await incrementInviteUses(code);
 
   const inviterAddress = `${invite.inviter_handle}.${invite.project_name}`;
 
@@ -49,21 +49,21 @@ export function acceptInvite(code, acceptorProject) {
     const msg = invite.code === HELLO_CODE
       ? invite.welcome_message.replace('{address}', `${acceptorProject._address || 'your-handle.your-project'}`)
       : invite.welcome_message;
-    deliverMessage(invite.project_id, acceptorProject, msg);
+    await deliverMessage(invite.project_id, acceptorProject, msg);
   }
 
   return { connected_to: inviterAddress, welcome_message: invite.welcome_message || null };
 }
 
 /** Encrypt and deliver a message from one project to another. */
-function deliverMessage(senderProjectId, recipientProject, plaintext) {
-  const sender = findProject(senderProjectId);
+async function deliverMessage(senderProjectId, recipientProject, plaintext) {
+  const sender = await findProject(senderProjectId);
   if (!sender) return;
 
   const senderPrivKey = decryptPrivateKey(sender.private_key_enc, process.env.MASTER_KEY);
   const { ciphertext, nonce } = encryptMessage(senderPrivKey, recipientProject.public_key, plaintext);
 
-  storeMessage({
+  await storeMessage({
     senderProjectId: sender.id,
     senderInstanceId: null,
     recipientProjectId: recipientProject.id,
@@ -78,18 +78,18 @@ export function generateInviteCode() {
 }
 
 /** Seed the botmail system account, hello project, and hello invite on first boot. */
-export function seed() {
-  const existing = findAccountByHandle(SYSTEM_HANDLE);
+export async function seed() {
+  const existing = await findAccountByHandle(SYSTEM_HANDLE);
   if (existing) return;
 
-  createAccount({ id: SYSTEM_ACCOUNT_ID, email: 'system@botmail.app', handle: SYSTEM_HANDLE });
+  await createAccount({ id: SYSTEM_ACCOUNT_ID, email: 'system@botmail.app', handle: SYSTEM_HANDLE });
 
   const kp = generateKeypair();
   const projectId = deriveAgentId(kp.publicKey);
   const privateKeyEnc = encryptPrivateKey(kp.privateKey, process.env.MASTER_KEY);
-  createProject({ id: projectId, accountId: SYSTEM_ACCOUNT_ID, name: SYSTEM_PROJECT, publicKey: kp.publicKey, privateKeyEnc });
+  await createProject({ id: projectId, accountId: SYSTEM_ACCOUNT_ID, name: SYSTEM_PROJECT, publicKey: kp.publicKey, privateKeyEnc });
 
-  createInvite({
+  await createInvite({
     code: HELLO_CODE,
     projectId,
     welcomeMessage: WELCOME_TEMPLATE,

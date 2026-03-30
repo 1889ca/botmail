@@ -73,8 +73,8 @@ function botBriefing(base, { invite } = {}) {
 
 async function main() {
   await crypt.init();
-  db.init();
-  seed();
+  await db.init();
+  await seed();
 
   const app = express();
   app.use(express.json());
@@ -152,8 +152,8 @@ async function main() {
   });
 
   // --- Invite links ---
-  app.get('/invite/:code', (req, res) => {
-    const invite = findInvite(req.params.code);
+  app.get('/invite/:code', async (req, res) => {
+    const invite = await findInvite(req.params.code);
     if (!invite) {
       res.status(404);
       if (req.accepts('json')) return res.json({ error: 'Invite not found' });
