@@ -1,4 +1,4 @@
-/** Contract: SQLite persistence for agents, OAuth, and messages */
+/** Contract: SQLite persistence for agents, email auth, rate limits, and messages */
 
 import Database from 'better-sqlite3';
 import crypto from 'node:crypto';
@@ -17,13 +17,13 @@ export function init(dbPath = 'data/bmail.db') {
   db.exec(`
     CREATE TABLE IF NOT EXISTS agents (
       id TEXT PRIMARY KEY,
-      provider TEXT NOT NULL,
-      provider_id TEXT NOT NULL,
+      email TEXT NOT NULL UNIQUE,
       display_name TEXT,
       public_key TEXT NOT NULL,
       private_key_enc TEXT NOT NULL,
-      created_at TEXT DEFAULT (datetime('now')),
-      UNIQUE(provider, provider_id)
+      reputation TEXT DEFAULT 'restricted',
+      messages_sent INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS oauth_clients (
@@ -39,8 +39,17 @@ export function init(dbPath = 'data/bmail.db') {
       state TEXT,
       code_challenge TEXT,
       code_challenge_method TEXT,
-      provider TEXT,
       created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS magic_links (
+      token_hash TEXT PRIMARY KEY,
+      email TEXT NOT NULL,
+      pending_auth_id TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      used INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (pending_auth_id) REFERENCES pending_auth(id)
     );
 
     CREATE TABLE IF NOT EXISTS auth_codes (
@@ -72,6 +81,13 @@ export function init(dbPath = 'data/bmail.db') {
       FOREIGN KEY (sender_id) REFERENCES agents(id),
       FOREIGN KEY (recipient_id) REFERENCES agents(id)
     );
+
+    CREATE TABLE IF NOT EXISTS rate_limits (
+      key TEXT NOT NULL,
+      action TEXT NOT NULL,
+      timestamp TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_rate_limits_lookup ON rate_limits(key, action, timestamp);
   `);
 
   return db;
@@ -84,17 +100,25 @@ function token() { return crypto.randomBytes(48).toString('hex'); }
 function hash(val) { return crypto.createHash('sha256').update(val).digest('hex'); }
 
 // --- Agents ---
-export function createAgent({ id, provider, providerId, displayName, publicKey, privateKeyEnc }) {
-  db.prepare(`INSERT INTO agents (id, provider, provider_id, display_name, public_key, private_key_enc)
-    VALUES (?, ?, ?, ?, ?, ?)`).run(id, provider, providerId, displayName, publicKey, privateKeyEnc);
+export function createAgent({ id, email, displayName, publicKey, privateKeyEnc }) {
+  db.prepare(`INSERT INTO agents (id, email, display_name, public_key, private_key_enc)
+    VALUES (?, ?, ?, ?, ?)`).run(id, email, displayName, publicKey, privateKeyEnc);
 }
 
-export function findAgentByProvider(provider, providerId) {
-  return db.prepare('SELECT * FROM agents WHERE provider = ? AND provider_id = ?').get(provider, providerId);
+export function findAgentByEmail(email) {
+  return db.prepare('SELECT * FROM agents WHERE email = ?').get(email);
 }
 
 export function findAgent(id) {
   return db.prepare('SELECT * FROM agents WHERE id = ?').get(id);
+}
+
+export function incrementMessagesSent(agentId) {
+  db.prepare('UPDATE agents SET messages_sent = messages_sent + 1 WHERE id = ?').run(agentId);
+}
+
+export function updateReputation(agentId, reputation) {
+  db.prepare('UPDATE agents SET reputation = ? WHERE id = ?').run(reputation, agentId);
 }
 
 // --- OAuth Clients ---
@@ -111,8 +135,8 @@ export function findClient(clientId) {
 // --- Pending Auth ---
 export function createPendingAuth(params) {
   const id = uid();
-  db.prepare(`INSERT INTO pending_auth (id, client_id, redirect_uri, state, code_challenge, code_challenge_method, provider)
-    VALUES (?, ?, ?, ?, ?, ?, ?)`).run(id, params.clientId, params.redirectUri, params.state, params.codeChallenge, params.codeChallengeMethod, params.provider);
+  db.prepare(`INSERT INTO pending_auth (id, client_id, redirect_uri, state, code_challenge, code_challenge_method)
+    VALUES (?, ?, ?, ?, ?, ?)`).run(id, params.clientId, params.redirectUri, params.state, params.codeChallenge, params.codeChallengeMethod);
   return id;
 }
 
@@ -122,6 +146,25 @@ export function findPendingAuth(id) {
 
 export function deletePendingAuth(id) {
   db.prepare('DELETE FROM pending_auth WHERE id = ?').run(id);
+}
+
+// --- Magic Links ---
+export function createMagicLink({ tokenHash, email, pendingAuthId, expiresAt }) {
+  db.prepare(`INSERT INTO magic_links (token_hash, email, pending_auth_id, expires_at)
+    VALUES (?, ?, ?, ?)`).run(tokenHash, email, pendingAuthId, expiresAt);
+}
+
+export function consumeMagicLink(rawToken) {
+  const h = hash(rawToken);
+  const row = db.prepare('SELECT * FROM magic_links WHERE token_hash = ? AND used = 0').get(h);
+  if (!row) return null;
+  if (new Date(row.expires_at) < new Date()) return null;
+  db.prepare('UPDATE magic_links SET used = 1 WHERE token_hash = ?').run(h);
+  return row;
+}
+
+export function purgeExpiredMagicLinks() {
+  return db.prepare("DELETE FROM magic_links WHERE used = 1 OR datetime(expires_at) < datetime('now')").run();
 }
 
 // --- Auth Codes ---
@@ -150,6 +193,22 @@ export function createAccessToken(agentId) {
 
 export function resolveToken(raw) {
   return db.prepare('SELECT agent_id FROM access_tokens WHERE token_hash = ?').get(hash(raw));
+}
+
+// --- Rate Limits ---
+export function recordRateEvent(key, action) {
+  db.prepare('INSERT INTO rate_limits (key, action) VALUES (?, ?)').run(key, action);
+}
+
+export function countRateEvents(key, action, windowMinutes) {
+  const row = db.prepare(
+    `SELECT COUNT(*) as count FROM rate_limits WHERE key = ? AND action = ? AND timestamp > datetime('now', ? || ' minutes')`
+  ).get(key, action, `-${windowMinutes}`);
+  return row.count;
+}
+
+export function purgeOldRateEvents() {
+  return db.prepare("DELETE FROM rate_limits WHERE timestamp < datetime('now', '-24 hours')").run();
 }
 
 // --- Messages ---

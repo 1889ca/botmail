@@ -1,18 +1,11 @@
-/** Contract: OAuth 2.1 authorization server endpoints (metadata, registration, authorize, token) */
+/** Contract: OAuth 2.1 authorization server with email magic link identity */
 
 import crypto from 'node:crypto';
-import { registerClient, findClient, createPendingAuth, consumeAuthCode, createAccessToken } from '../db.js';
-
-const PROVIDERS = {
-  github: {
-    authUrl: 'https://github.com/login/oauth/authorize',
-    scopes: 'read:user',
-  },
-  google: {
-    authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-    scopes: 'openid email profile',
-  },
-};
+import { registerClient, findClient, createPendingAuth, findPendingAuth, deletePendingAuth, consumeAuthCode, createAccessToken, createAuthCode } from '../db.js';
+import { sendMagicLink, ensureAgent } from './magic.js';
+import { checkMagicLinkRate, recordMagicLink } from '../ratelimit.js';
+import { emailFormPage, checkEmailPage, errorPage } from './pages.js';
+import { consumeMagicLink } from '../db.js';
 
 /** GET /.well-known/oauth-authorization-server */
 export function metadata(req, res) {
@@ -53,9 +46,9 @@ export function register(req, res) {
   });
 }
 
-/** GET /oauth/authorize — Show provider selection, then redirect to chosen provider */
+/** GET /oauth/authorize — Show email input form */
 export function authorize(req, res) {
-  const { client_id, redirect_uri, state, code_challenge, code_challenge_method, response_type, provider } = req.query;
+  const { client_id, redirect_uri, state, code_challenge, code_challenge_method, response_type } = req.query;
 
   if (response_type !== 'code') {
     res.status(400).json({ error: 'unsupported_response_type' });
@@ -74,55 +67,68 @@ export function authorize(req, res) {
     return;
   }
 
-  // If provider is specified, redirect directly to that provider
-  if (provider && PROVIDERS[provider]) {
-    return redirectToProvider(req, res, provider);
-  }
-
-  // Show minimal provider selection page
-  const qs = new URLSearchParams(req.query);
-  res.type('html').send(`<!DOCTYPE html>
-<html><head><title>bmail</title>
-<style>
-  body { font-family: monospace; max-width: 380px; margin: 80px auto; text-align: center; background: #0a0a0a; color: #ccc; }
-  h2 { color: #fff; letter-spacing: 2px; }
-  a { display: block; padding: 14px; margin: 12px 0; background: #1a1a1a; color: #0f0;
-      text-decoration: none; border: 1px solid #333; border-radius: 4px; }
-  a:hover { background: #222; border-color: #0f0; }
-  p { font-size: 12px; color: #666; }
-</style></head>
-<body>
-  <h2>/// bmail</h2>
-  <p>create your agent identity</p>
-  <a href="/oauth/authorize?${qs.toString()}&provider=github">GitHub</a>
-  <a href="/oauth/authorize?${qs.toString()}&provider=google">Google</a>
-  <p style="margin-top: 32px;">bot-to-bot encrypted relay</p>
-</body></html>`);
-}
-
-function redirectToProvider(req, res, provider) {
-  const { client_id, redirect_uri, state, code_challenge, code_challenge_method } = req.query;
-  const base = process.env.BASE_URL;
-  const cfg = PROVIDERS[provider];
-
   const pendingId = createPendingAuth({
     clientId: client_id,
     redirectUri: redirect_uri,
     state,
     codeChallenge: code_challenge,
     codeChallengeMethod: code_challenge_method,
-    provider,
   });
 
-  const params = new URLSearchParams({
-    client_id: provider === 'github' ? process.env.GITHUB_CLIENT_ID : process.env.GOOGLE_CLIENT_ID,
-    redirect_uri: `${base}/oauth/callback/${provider}`,
-    state: pendingId,
-    scope: cfg.scopes,
-    response_type: 'code',
-  });
+  res.type('html').send(emailFormPage(pendingId));
+}
 
-  res.redirect(`${cfg.authUrl}?${params.toString()}`);
+/** POST /oauth/authorize/email — Handle email form submission, send magic link */
+export async function submitEmail(req, res) {
+  const { email, pending_auth_id } = req.body;
+
+  if (!email || !pending_auth_id) {
+    res.status(400).type('html').send(errorPage('Missing email or session.'));
+    return;
+  }
+
+  const pending = findPendingAuth(pending_auth_id);
+  if (!pending) {
+    res.status(400).type('html').send(errorPage('Invalid or expired session. Please start over.'));
+    return;
+  }
+
+  // Always show "check your email" — don't reveal rate limit status (prevents email enumeration)
+  const rate = checkMagicLinkRate(email);
+  if (rate.allowed) {
+    try {
+      recordMagicLink(email);
+      await sendMagicLink(email, pending_auth_id);
+    } catch (err) {
+      console.error('Failed to send magic link:', err);
+    }
+  }
+
+  res.type('html').send(checkEmailPage(email));
+}
+
+/** GET /oauth/verify — Handle magic link click */
+export function verifyLink(req, res) {
+  const { token } = req.query;
+  if (!token) {
+    res.status(400).type('html').send(errorPage('Missing verification token.'));
+    return;
+  }
+
+  const link = consumeMagicLink(token);
+  if (!link) {
+    res.status(400).type('html').send(errorPage('This link is invalid or has expired. Please request a new one.'));
+    return;
+  }
+
+  const pending = findPendingAuth(link.pending_auth_id);
+  if (!pending) {
+    res.status(400).type('html').send(errorPage('Auth session expired. Please start over.'));
+    return;
+  }
+
+  const agent = ensureAgent(link.email);
+  finishAuth(res, pending, agent.id);
 }
 
 /** POST /oauth/token — Exchange auth code for access token */
@@ -164,4 +170,21 @@ export function tokenExchange(req, res) {
     token_type: 'Bearer',
     scope: 'bmail',
   });
+}
+
+/** Issue auth code and redirect back to the MCP client. */
+function finishAuth(res, pending, agentId) {
+  const code = createAuthCode({
+    clientId: pending.client_id,
+    agentId,
+    redirectUri: pending.redirect_uri,
+    codeChallenge: pending.code_challenge,
+    codeChallengeMethod: pending.code_challenge_method,
+  });
+  deletePendingAuth(pending.id);
+
+  const url = new URL(pending.redirect_uri);
+  url.searchParams.set('code', code);
+  if (pending.state) url.searchParams.set('state', pending.state);
+  res.redirect(url.toString());
 }

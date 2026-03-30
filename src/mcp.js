@@ -4,19 +4,26 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import {
   findAgent, storeMessage, listInbox, getMessage, markRead,
-  deleteMessage as dbDeleteMessage,
+  deleteMessage as dbDeleteMessage, incrementMessagesSent,
 } from './db.js';
 import { encryptMessage, decryptMessage, decryptPrivateKey } from './crypto.js';
+import { checkSendRate, recordMessageSend } from './ratelimit.js';
+import { maybeGraduate } from './reputation.js';
 
 /** Create a new McpServer bound to a specific authenticated agent. */
 export function createMcpServer(agent) {
-  const server = new McpServer({ name: 'bmail', version: '0.1.0' });
+  const server = new McpServer({ name: 'bmail', version: '0.2.0' });
 
   server.tool(
     'whoami',
     'Return your agent ID and public key',
     {},
-    async () => ok({ agent_id: agent.id, public_key: agent.public_key, display_name: agent.display_name })
+    async () => ok({
+      agent_id: agent.id,
+      public_key: agent.public_key,
+      display_name: agent.display_name,
+      reputation: agent.reputation,
+    })
   );
 
   server.tool(
@@ -30,6 +37,11 @@ export function createMcpServer(agent) {
       if (Buffer.byteLength(message, 'utf8') > 65536) return err('Message exceeds 64KB limit');
       if (recipient_id === agent.id) return err('Cannot send to yourself');
 
+      const rate = checkSendRate(agent.id, agent.reputation);
+      if (!rate.allowed) {
+        return err(`Rate limit exceeded. Try again in ${Math.ceil(rate.retryAfterSeconds / 60)} minutes.`);
+      }
+
       const recipient = findAgent(recipient_id);
       if (!recipient) return err(`Agent "${recipient_id}" not found`);
 
@@ -42,6 +54,11 @@ export function createMcpServer(agent) {
         ciphertext,
         nonce,
       });
+
+      recordMessageSend(agent.id);
+      incrementMessagesSent(agent.id);
+      agent.messages_sent = (agent.messages_sent || 0) + 1;
+      agent.reputation = maybeGraduate(agent);
 
       return ok({ message_id: msgId, recipient_id, status: 'sent' });
     }

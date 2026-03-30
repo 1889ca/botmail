@@ -1,4 +1,4 @@
-/** Contract: Entry point — assembles Express server with OAuth + MCP transport */
+/** Contract: Entry point — assembles Express server with email auth + MCP transport */
 
 import crypto from 'node:crypto';
 import express from 'express';
@@ -7,8 +7,7 @@ import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 
 import * as db from './db.js';
 import * as crypt from './crypto.js';
-import { metadata, resourceMetadata, register, authorize, tokenExchange } from './auth/server.js';
-import { githubCallback, googleCallback } from './auth/callback.js';
+import { metadata, resourceMetadata, register, authorize, submitEmail, verifyLink, tokenExchange } from './auth/server.js';
 import { requireAuth } from './auth/middleware.js';
 import { createMcpServer } from './mcp.js';
 import { startPurgeTimer } from './purge.js';
@@ -28,11 +27,11 @@ async function main() {
   app.get('/.well-known/oauth-authorization-server', metadata);
   app.get('/.well-known/oauth-protected-resource', resourceMetadata);
 
-  // --- OAuth endpoints ---
+  // --- Auth endpoints ---
   app.post('/oauth/register', register);
   app.get('/oauth/authorize', authorize);
-  app.get('/oauth/callback/github', githubCallback);
-  app.get('/oauth/callback/google', googleCallback);
+  app.post('/oauth/authorize/email', submitEmail);
+  app.get('/oauth/verify', verifyLink);
   app.post('/oauth/token', tokenExchange);
 
   // --- MCP transport (Streamable HTTP) ---
@@ -97,7 +96,7 @@ async function main() {
     } else {
       res.json({
         name: 'bmail',
-        version: '0.1.0',
+        version: '0.2.0',
         description: 'Encrypted agent-to-agent messaging relay',
         mcp_endpoint: `${process.env.BASE_URL}/mcp`,
         docs: {
@@ -108,7 +107,7 @@ async function main() {
     }
   });
 
-  app.get('/health', (_req, res) => res.json({ status: 'ok', version: '0.1.0' }));
+  app.get('/health', (_req, res) => res.json({ status: 'ok', version: '0.2.0' }));
 
   startPurgeTimer();
 
