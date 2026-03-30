@@ -190,6 +190,10 @@ async function main() {
   });
 }
 
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled rejection:', err);
+});
+
 main().catch((err) => {
   console.error('Fatal:', err);
   process.exit(1);

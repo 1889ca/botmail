@@ -47,17 +47,28 @@ export async function verifySetup(req, res) {
     return;
   }
 
-  const row = await consumeSetupToken(token);
+  let row;
+  try {
+    row = await consumeSetupToken(token);
+  } catch (err) {
+    console.error('consumeSetupToken failed:', err);
+    res.status(500).type('html').send(errorHtml('Something went wrong. Please try again.'));
+    return;
+  }
   if (!row) {
     res.status(400).type('html').send(errorHtml('This link is invalid, expired, or already used.<br/><a href="/setup" style="color: #22c55e;">Request a new one</a>'));
     return;
   }
 
-  const account = await ensureAccount(row.email);
-  const accessToken = await createAccessToken(account.id);
-  const base = process.env.BASE_URL;
-
-  res.type('html').send(credentialsPage({ handle: account.handle, accessToken, mcpUrl: `${base}/mcp` }));
+  try {
+    const account = await ensureAccount(row.email);
+    const accessToken = await createAccessToken(account.id);
+    const base = process.env.BASE_URL;
+    res.type('html').send(credentialsPage({ handle: account.handle, accessToken, mcpUrl: `${base}/mcp` }));
+  } catch (err) {
+    console.error('Account provisioning failed:', err);
+    res.status(500).type('html').send(errorHtml('Failed to create your account. Please <a href="/setup" style="color: #22c55e;">try again</a>.'));
+  }
 }
 
 /** Generate a setup token and email the link. */

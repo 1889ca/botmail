@@ -9,7 +9,14 @@ let pool;
 export async function init() {
   const url = new URL(process.env.DATABASE_URL);
   url.searchParams.set('uselibpqcompat', 'true');
-  pool = new Pool({ connectionString: url.toString(), ssl: { rejectUnauthorized: false } });
+  pool = new Pool({
+    connectionString: url.toString(),
+    ssl: { rejectUnauthorized: false },
+    max: 5,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000,
+    statement_timeout: 10000,
+  });
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS accounts (
