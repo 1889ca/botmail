@@ -10,7 +10,7 @@ import {
   deleteMessage as dbDeleteMessage, incrementMessagesSent,
   findAccount as dbFindAccount, createInvite, listContacts,
 } from './db.js';
-import { generateKeypair, deriveAgentId, encryptMessage, decryptMessage, decryptPrivateKey } from './crypto.js';
+import { generateKeypair, deriveAgentId, encryptPrivateKey, encryptMessage, decryptMessage, decryptPrivateKey } from './crypto.js';
 import { checkSendRate, recordMessageSend } from './ratelimit.js';
 import { maybeGraduate } from './reputation.js';
 import { acceptInvite, generateInviteCode } from './invites.js';
