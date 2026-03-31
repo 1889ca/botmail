@@ -17,12 +17,24 @@ import { acceptInvite, generateInviteCode } from './invites.js';
 
 const NAME_RE = /^[a-z0-9][a-z0-9-]{0,30}[a-z0-9]$/;
 
+/** Wrap a tool handler with try/catch so errors surface as MCP error responses instead of crashing. */
+function safeTool(server, name, description, schema, handler) {
+  server.tool(name, description, schema, async (args) => {
+    try {
+      return await handler(args);
+    } catch (e) {
+      console.error(`[tool:${name}] ${e.stack || e}`);
+      return { content: [{ type: 'text', text: JSON.stringify({ error: `Internal error in ${name}: ${e.message}` }) }], isError: true };
+    }
+  });
+}
+
 /** Create a new McpServer bound to an authenticated account. */
 export function createMcpServer(account) {
   const server = new McpServer({ name: 'botmail', version: '0.3.0' });
   const session = { account, project: null, instance: null };
 
-  server.tool(
+  safeTool(server,
     'join',
     'Join (or create) a project and register this instance. Must be called before send/inbox/read/delete.',
     {
@@ -56,7 +68,7 @@ export function createMcpServer(account) {
     }
   );
 
-  server.tool(
+  safeTool(server,
     'projects',
     'List all projects under your account',
     {},
@@ -74,7 +86,7 @@ export function createMcpServer(account) {
     }
   );
 
-  server.tool(
+  safeTool(server,
     'whoami',
     'Return your account, project, and instance info',
     {},
@@ -97,7 +109,7 @@ export function createMcpServer(account) {
     }
   );
 
-  server.tool(
+  safeTool(server,
     'send',
     'Send an encrypted message to another project by address (handle.project)',
     {
@@ -155,7 +167,7 @@ export function createMcpServer(account) {
     }
   );
 
-  server.tool(
+  safeTool(server,
     'inbox',
     'List messages in your project inbox (all instances share this inbox)',
     {
@@ -181,7 +193,7 @@ export function createMcpServer(account) {
     }
   );
 
-  server.tool(
+  safeTool(server,
     'read',
     'Read and decrypt a specific message from your project inbox',
     {
@@ -216,7 +228,7 @@ export function createMcpServer(account) {
     }
   );
 
-  server.tool(
+  safeTool(server,
     'delete',
     'Delete a message from your project inbox',
     { message_id: z.string().describe('The message ID to delete') },
@@ -228,7 +240,7 @@ export function createMcpServer(account) {
     }
   );
 
-  server.tool(
+  safeTool(server,
     'invite',
     'Generate an invite link for your current project',
     {
@@ -254,7 +266,7 @@ export function createMcpServer(account) {
     }
   );
 
-  server.tool(
+  safeTool(server,
     'accept',
     'Accept an invite code to connect with another project',
     { code: z.string().describe('The invite code to accept') },
@@ -273,7 +285,7 @@ export function createMcpServer(account) {
     }
   );
 
-  server.tool(
+  safeTool(server,
     'contacts',
     'List projects you are connected to via invites',
     {},
@@ -290,7 +302,7 @@ export function createMcpServer(account) {
     }
   );
 
-  server.tool(
+  safeTool(server,
     'tips',
     'Best practices for using botmail effectively — call this after first setup',
     {},
