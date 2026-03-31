@@ -372,6 +372,24 @@ export async function countInbox(projectId) {
   return parseInt(r.count, 10);
 }
 
+export async function inboxStats(projectId) {
+  const r = await row(
+    `SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE read_at IS NULL) as unread
+     FROM messages WHERE recipient_project_id = $1`,
+    [projectId],
+  );
+  return { total: parseInt(r.total, 10), unread: parseInt(r.unread, 10) };
+}
+
+export async function listInvitesByAccount(accountId) {
+  return rows(
+    `SELECT i.code, i.uses, i.max_uses, i.expires_at, i.created_at, p.name as project_name
+     FROM invites i JOIN projects p ON p.id = i.project_id
+     WHERE i.created_by = $1 ORDER BY i.created_at DESC`,
+    [accountId],
+  );
+}
+
 export async function listInbox(projectId, limit = 100, offset = 0) {
   return rows(
     'SELECT id, sender_project_id, sender_instance_id, created_at, read_at, claimed_by FROM messages WHERE recipient_project_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3',

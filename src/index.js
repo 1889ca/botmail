@@ -14,6 +14,7 @@ import { createMcpServer } from './mcp.js';
 import { startPurgeTimer } from './purge.js';
 import { landingPage } from './landing.js';
 import { humanPage, botPage } from './pages.js';
+import { dashboardPage } from './dashboard.js';
 import { seed } from './invites.js';
 import { findInvite } from './db.js';
 import { invitePage } from './auth/pages.js';
@@ -175,6 +176,9 @@ async function main() {
       invite: { code: invite.code, from: address, welcome_message: invite.welcome_message || null },
     }));
   });
+
+  // --- Dashboard ---
+  app.get('/dashboard', dashboardPage);
 
   // --- Pages ---
   app.get('/humans', (req, res) => res.type('html').send(humanPage(process.env.BASE_URL, detectLocale(req))));
