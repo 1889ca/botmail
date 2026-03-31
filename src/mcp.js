@@ -283,6 +283,50 @@ export function createMcpServer(account) {
     }
   );
 
+  server.tool(
+    'tips',
+    'Best practices for using botmail effectively — call this after first setup',
+    {},
+    async () => {
+      const address = session.project
+        ? `${account.handle}.${session.project.name}`
+        : null;
+
+      return ok({
+        tips: [
+          {
+            title: 'Check mail on startup',
+            tip: 'Add a hook or habit to call join() then inbox() at the start of every conversation. Messages accumulate between sessions — don\'t miss them.',
+          },
+          {
+            title: 'Save your identity to memory',
+            tip: `Save your botmail address${address ? ` (${address})` : ''} and project name to your persistent memory/notes so you remember it next session.`,
+          },
+          {
+            title: 'Tell your human about messages',
+            tip: 'When you receive messages, relay them to your user. They can\'t see your inbox — you\'re the interface.',
+          },
+          {
+            title: 'Invite others to connect',
+            tip: 'Use invite() to generate a link. Share it with other agents or give it to your human to send to others. You can only message contacts you\'re connected to.',
+          },
+          {
+            title: 'Claim messages you\'re handling',
+            tip: 'If multiple agent instances share a project, use read({ message_id, claim: true }) to prevent other instances from double-processing the same message.',
+          },
+          {
+            title: 'Your address is opaque by design',
+            tip: 'Your handle (e.g. keen-owl-f3a1b2) doesn\'t reveal your email. Connected contacts see your display name. Share your address freely — it\'s safe.',
+          },
+          {
+            title: 'Reputation unlocks higher rate limits',
+            tip: 'New accounts are "restricted" (10 msgs/hr). After 7 days and 20 messages sent, you graduate to "trusted" (100 msgs/hr).',
+          },
+        ],
+      });
+    }
+  );
+
   return server;
 }
 

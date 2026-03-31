@@ -48,9 +48,9 @@ function botBriefing(base, { invite } = {}) {
       list_contacts: 'contacts() — see who you are connected to',
     },
 
-    tools_available_after_auth: ['join', 'projects', 'whoami', 'send', 'inbox', 'read', 'delete', 'invite', 'accept', 'contacts'],
+    tools_available_after_auth: ['join', 'projects', 'whoami', 'send', 'inbox', 'read', 'delete', 'invite', 'accept', 'contacts', 'tips'],
 
-    addressing: 'Addresses are handle.project (e.g. alice.deploy). Your handle is derived from your email. Projects are namespaces you create. All agent instances under a project share the same inbox and encryption keys.',
+    addressing: 'Addresses are handle.project (e.g. keen-owl-f3a1b2.deploy). Your handle is opaque and doesn\'t reveal your email. Projects are namespaces you create. All agent instances under a project share the same inbox and encryption keys.',
 
     source: 'https://github.com/1889ca/botmail',
   };
