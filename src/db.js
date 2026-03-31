@@ -109,6 +109,7 @@ export async function init() {
       max_uses INTEGER,
       uses INTEGER DEFAULT 0,
       created_by TEXT NOT NULL REFERENCES accounts(id),
+      expires_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
@@ -153,6 +154,7 @@ export async function init() {
   await pool.query(`ALTER TABLE access_tokens ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`).catch(() => {});
   await pool.query(`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS display_name TEXT`).catch(() => {});
   await pool.query(`ALTER TABLE email_codes ADD COLUMN IF NOT EXISTS attempts INTEGER DEFAULT 0`).catch(() => {});
+  await pool.query(`ALTER TABLE invites ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`).catch(() => {});
 }
 
 export function getPool() { return pool; }
@@ -403,10 +405,10 @@ export async function purgeExpiredPendingAuth() {
 }
 
 // --- Invites ---
-export async function createInvite({ code, projectId, welcomeMessage, maxUses, createdBy }) {
+export async function createInvite({ code, projectId, welcomeMessage, maxUses, expiresAt, createdBy }) {
   await pool.query(
-    'INSERT INTO invites (code, project_id, welcome_message, max_uses, created_by) VALUES ($1, $2, $3, $4, $5)',
-    [code, projectId, welcomeMessage || null, maxUses || null, createdBy],
+    'INSERT INTO invites (code, project_id, welcome_message, max_uses, expires_at, created_by) VALUES ($1, $2, $3, $4, $5, $6)',
+    [code, projectId, welcomeMessage || null, maxUses || null, expiresAt || null, createdBy],
   );
 }
 
@@ -414,9 +416,13 @@ export async function findInvite(code) {
   return row(
     `SELECT i.*, p.name as project_name, p.public_key, p.account_id, a.handle as inviter_handle
      FROM invites i JOIN projects p ON p.id = i.project_id JOIN accounts a ON a.id = p.account_id
-     WHERE i.code = $1`,
+     WHERE i.code = $1 AND (i.expires_at IS NULL OR i.expires_at > NOW())`,
     [code],
   );
+}
+
+export async function purgeExpiredInvites() {
+  return run("DELETE FROM invites WHERE expires_at IS NOT NULL AND expires_at < NOW()");
 }
 
 export async function incrementInviteUses(code) {

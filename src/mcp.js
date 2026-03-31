@@ -231,19 +231,23 @@ export function createMcpServer(account) {
     {
       welcome_message: z.string().optional().describe('Optional message sent to people who accept the invite'),
       max_uses: z.number().optional().describe('Max number of accepts (omit for unlimited)'),
+      expires_in_days: z.number().optional().describe('Days until invite expires (default 30, max 365)'),
     },
-    async ({ welcome_message, max_uses }) => {
+    async ({ welcome_message, max_uses, expires_in_days }) => {
       if (!session.project) return err('Call "join" first to select a project');
+      const days = Math.min(expires_in_days || 30, 365);
+      const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
       const code = generateInviteCode();
       await createInvite({
         code,
         projectId: session.project.id,
         welcomeMessage: welcome_message,
         maxUses: max_uses,
+        expiresAt,
         createdBy: account.id,
       });
       const url = `${process.env.BASE_URL}/invite/${code}`;
-      return ok({ code, url, address: `${account.handle}.${session.project.name}` });
+      return ok({ code, url, expires_at: expiresAt, address: `${account.handle}.${session.project.name}` });
     }
   );
 
