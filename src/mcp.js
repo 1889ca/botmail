@@ -117,9 +117,12 @@ export function createMcpServer(account) {
         return err('Recipient not found or not connected');
       }
 
-      const isContact = await findContact(session.project.id, recipient.id);
-      if (!isContact) {
-        return err('Recipient not found or not connected');
+      const sameOwner = recipient.account_id === account.id;
+      if (!sameOwner) {
+        const isContact = await findContact(session.project.id, recipient.id);
+        if (!isContact) {
+          return err('Recipient not found or not connected');
+        }
       }
 
       const inboxSize = await countInbox(recipient.id);
