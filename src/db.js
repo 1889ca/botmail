@@ -23,6 +23,7 @@ export async function init() {
       id TEXT PRIMARY KEY,
       email TEXT NOT NULL UNIQUE,
       handle TEXT NOT NULL UNIQUE,
+      display_name TEXT,
       reputation TEXT DEFAULT 'restricted',
       messages_sent INTEGER DEFAULT 0,
       created_at TIMESTAMPTZ DEFAULT NOW()
@@ -85,6 +86,7 @@ export async function init() {
     CREATE TABLE IF NOT EXISTS access_tokens (
       token_hash TEXT PRIMARY KEY,
       account_id TEXT NOT NULL REFERENCES accounts(id),
+      expires_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
@@ -141,12 +143,16 @@ export async function init() {
       invite_code TEXT,
       expires_at TIMESTAMPTZ NOT NULL,
       used INTEGER DEFAULT 0,
+      attempts INTEGER DEFAULT 0,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
   `);
 
   // Migrations for existing databases
   await pool.query(`ALTER TABLE setup_tokens ADD COLUMN IF NOT EXISTS invite_code TEXT`).catch(() => {});
+  await pool.query(`ALTER TABLE access_tokens ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`).catch(() => {});
+  await pool.query(`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS display_name TEXT`).catch(() => {});
+  await pool.query(`ALTER TABLE email_codes ADD COLUMN IF NOT EXISTS attempts INTEGER DEFAULT 0`).catch(() => {});
 }
 
 export function getPool() { return pool; }
@@ -171,8 +177,8 @@ async function run(text, params) {
 }
 
 // --- Accounts ---
-export async function createAccount({ id, email, handle }) {
-  await pool.query('INSERT INTO accounts (id, email, handle) VALUES ($1, $2, $3)', [id, email, handle]);
+export async function createAccount({ id, email, handle, displayName }) {
+  await pool.query('INSERT INTO accounts (id, email, handle, display_name) VALUES ($1, $2, $3, $4)', [id, email, handle, displayName || null]);
 }
 
 export async function findAccount(id) {
@@ -284,6 +290,8 @@ export async function consumeEmailCode(id, rawCode) {
   const r = await row('SELECT * FROM email_codes WHERE id = $1 AND used = 0', [id]);
   if (!r) return null;
   if (new Date(r.expires_at) < new Date()) return null;
+  if (r.attempts >= 5) return null;
+  await pool.query('UPDATE email_codes SET attempts = attempts + 1 WHERE id = $1', [id]);
   if (r.code_hash !== hash(rawCode)) return null;
   await pool.query('UPDATE email_codes SET used = 1 WHERE id = $1', [id]);
   return r;
@@ -317,12 +325,17 @@ export async function consumeAuthCode(code) {
 // --- Access Tokens ---
 export async function createAccessToken(accountId) {
   const raw = token();
-  await pool.query('INSERT INTO access_tokens (token_hash, account_id) VALUES ($1, $2)', [hash(raw), accountId]);
+  const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+  await pool.query('INSERT INTO access_tokens (token_hash, account_id, expires_at) VALUES ($1, $2, $3)', [hash(raw), accountId, expiresAt]);
   return raw;
 }
 
 export async function resolveToken(raw) {
-  return row('SELECT account_id FROM access_tokens WHERE token_hash = $1', [hash(raw)]);
+  return row('SELECT account_id FROM access_tokens WHERE token_hash = $1 AND (expires_at IS NULL OR expires_at > NOW())', [hash(raw)]);
+}
+
+export async function purgeExpiredTokens() {
+  return run("DELETE FROM access_tokens WHERE expires_at IS NOT NULL AND expires_at < NOW()");
 }
 
 // --- Rate Limits ---
@@ -352,10 +365,15 @@ export async function storeMessage({ senderProjectId, senderInstanceId, recipien
   return id;
 }
 
-export async function listInbox(projectId) {
+export async function countInbox(projectId) {
+  const r = await row('SELECT COUNT(*) as count FROM messages WHERE recipient_project_id = $1', [projectId]);
+  return parseInt(r.count, 10);
+}
+
+export async function listInbox(projectId, limit = 100, offset = 0) {
   return rows(
-    'SELECT id, sender_project_id, sender_instance_id, created_at, read_at, claimed_by FROM messages WHERE recipient_project_id = $1 ORDER BY created_at DESC',
-    [projectId],
+    'SELECT id, sender_project_id, sender_instance_id, created_at, read_at, claimed_by FROM messages WHERE recipient_project_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3',
+    [projectId, limit, offset],
   );
 }
 
@@ -413,7 +431,7 @@ export async function addContact(projectId, contactProjectId) {
 
 export async function listContacts(projectId) {
   return rows(
-    `SELECT c.contact_project_id, c.created_at, p.name as project_name, a.handle
+    `SELECT c.contact_project_id, c.created_at, p.name as project_name, a.handle, a.display_name
      FROM contacts c JOIN projects p ON p.id = c.contact_project_id JOIN accounts a ON a.id = p.account_id
      WHERE c.project_id = $1 ORDER BY c.created_at DESC`,
     [projectId],

@@ -8,7 +8,7 @@ const MAX_AGE = 30 * 24 * 60 * 60; // 30 days in seconds
 
 function sign(value) {
   const key = process.env.MASTER_KEY;
-  return crypto.createHmac('sha256', key).update(value).digest('hex').slice(0, 16);
+  return crypto.createHmac('sha256', key).update(value).digest('hex').slice(0, 32);
 }
 
 /** Set a signed session cookie on the response. */

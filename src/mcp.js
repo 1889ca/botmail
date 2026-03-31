@@ -6,12 +6,12 @@ import { z } from 'zod';
 import {
   findProjectByAccountAndName, findProjectByAddress, findProject,
   createProject, listProjects, createInstance, touchInstance,
-  storeMessage, listInbox, getMessage, markRead, claimMessage,
+  storeMessage, listInbox, countInbox, getMessage, markRead, claimMessage,
   deleteMessage as dbDeleteMessage, incrementMessagesSent,
-  findAccount as dbFindAccount, createInvite, listContacts,
+  findAccount as dbFindAccount, createInvite, listContacts, findContact,
 } from './db.js';
 import { generateKeypair, deriveAgentId, encryptPrivateKey, encryptMessage, decryptMessage, decryptPrivateKey } from './crypto.js';
-import { checkSendRate, recordMessageSend } from './ratelimit.js';
+import { checkSendRate, recordMessageSend, checkAcceptRate, recordAcceptInvite } from './ratelimit.js';
 import { maybeGraduate } from './reputation.js';
 import { acceptInvite, generateInviteCode } from './invites.js';
 
@@ -87,6 +87,7 @@ export function createMcpServer(account) {
 
       return ok({
         account: account.handle,
+        display_name: account.display_name || null,
         address,
         instance: instanceAddr,
         project_id: session.project.id,
@@ -112,8 +113,19 @@ export function createMcpServer(account) {
       const [handle, projectName] = parts;
 
       const recipient = await findProjectByAddress(handle, projectName);
-      if (!recipient) return err(`Project "${to}" not found`);
-      if (recipient.id === session.project.id) return err('Cannot send to yourself');
+      if (!recipient || recipient.id === session.project.id) {
+        return err('Recipient not found or not connected');
+      }
+
+      const isContact = await findContact(session.project.id, recipient.id);
+      if (!isContact) {
+        return err('Recipient not found or not connected');
+      }
+
+      const inboxSize = await countInbox(recipient.id);
+      if (inboxSize >= 500) {
+        return err('Recipient inbox is full');
+      }
 
       const rate = await checkSendRate(account.id, account.reputation);
       if (!rate.allowed) {
@@ -143,16 +155,21 @@ export function createMcpServer(account) {
   server.tool(
     'inbox',
     'List messages in your project inbox (all instances share this inbox)',
-    {},
-    async () => {
+    {
+      limit: z.number().optional().describe('Max messages to return (default 100, max 100)'),
+      offset: z.number().optional().describe('Number of messages to skip (default 0)'),
+    },
+    async ({ limit, offset }) => {
       if (!session.project) return err('Call "join" first to select a project');
-      const messages = await listInbox(session.project.id);
+      const pageLimit = Math.min(limit || 100, 100);
+      const pageOffset = offset || 0;
+      const messages = await listInbox(session.project.id, pageLimit, pageOffset);
       return ok({
         address: `${account.handle}.${session.project.name}`,
         count: messages.length,
         messages: await Promise.all(messages.map(async m => ({
           id: m.id,
-          from: await resolveSenderAddress(m.sender_project_id),
+          from: await resolveSenderAddress(m.sender_project_id, session.project.id),
           received_at: m.created_at,
           read: !!m.read_at,
           claimed_by: m.claimed_by || null,
@@ -188,7 +205,7 @@ export function createMcpServer(account) {
 
       return ok({
         id: msg.id,
-        from: await resolveSenderAddress(msg.sender_project_id),
+        from: await resolveSenderAddress(msg.sender_project_id, session.project.id),
         message: plaintext,
         received_at: msg.created_at,
         claimed_by: claim ? session.instance.id : (msg.claimed_by || null),
@@ -236,10 +253,15 @@ export function createMcpServer(account) {
     { code: z.string().describe('The invite code to accept') },
     async ({ code }) => {
       if (!session.project) return err('Call "join" first to select a project');
+      const rate = await checkAcceptRate(account.id);
+      if (!rate.allowed) {
+        return err(`Rate limit exceeded. Try again in ${Math.ceil(rate.retryAfterSeconds / 60)} minutes.`);
+      }
       const proj = await findProject(session.project.id);
       proj._address = `${account.handle}.${session.project.name}`;
       const result = await acceptInvite(code, proj);
       if (result.error) return err(result.error);
+      await recordAcceptInvite(account.id);
       return ok(result);
     }
   );
@@ -254,6 +276,7 @@ export function createMcpServer(account) {
       return ok({
         contacts: contactRows.map(c => ({
           address: `${c.handle}.${c.project_name}`,
+          display_name: c.display_name || null,
           connected_at: c.created_at,
         })),
       });
@@ -263,12 +286,20 @@ export function createMcpServer(account) {
   return server;
 }
 
-/** Resolve a project ID to its handle.name address. */
-async function resolveSenderAddress(projectId) {
+/** Resolve a project ID to its handle.name address, optionally with display_name for contacts. */
+async function resolveSenderAddress(projectId, viewerProjectId) {
   const project = await findProject(projectId);
-  if (!project) return projectId;
+  if (!project) return { address: projectId };
   const acct = await dbFindAccount(project.account_id);
-  return acct ? `${acct.handle}.${project.name}` : projectId;
+  if (!acct) return { address: projectId };
+  const address = `${acct.handle}.${project.name}`;
+  if (viewerProjectId) {
+    const contact = await findContact(viewerProjectId, projectId);
+    if (contact && acct.display_name) {
+      return { address, display_name: acct.display_name };
+    }
+  }
+  return { address };
 }
 
 function ok(data) {

@@ -93,6 +93,7 @@ async function main() {
 
   // --- MCP transport (Streamable HTTP) ---
   const sessions = new Map();
+  const MAX_SESSIONS = 1000;
 
   app.post('/mcp', requireAuth, async (req, res) => {
     const sessionId = req.headers['mcp-session-id'];
@@ -104,6 +105,15 @@ async function main() {
     }
 
     if (!sessionId && isInitializeRequest(req.body)) {
+      if (sessions.size >= MAX_SESSIONS) {
+        res.status(503).json({
+          jsonrpc: '2.0',
+          error: { code: -32000, message: 'Server at capacity' },
+          id: null,
+        });
+        return;
+      }
+
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => crypto.randomUUID(),
         onsessioninitialized: (sid) => {

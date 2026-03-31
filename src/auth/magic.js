@@ -48,29 +48,23 @@ export async function ensureAccount(email) {
   if (existing) return existing;
 
   const id = crypto.randomUUID().replace(/-/g, '');
-  const handle = await deriveHandle(email);
+  const handle = await deriveHandle();
+  const displayName = email.split('@')[0].slice(0, 32);
 
-  await createAccount({ id, email, handle });
-  return { id, email, handle, reputation: 'restricted', messages_sent: 0 };
+  await createAccount({ id, email, handle, displayName });
+  return { id, email, handle, display_name: displayName, reputation: 'restricted', messages_sent: 0 };
 }
 
-/** Derive a unique handle from an email address. */
-async function deriveHandle(email) {
-  const base = email.split('@')[0]
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 28);
-
-  const candidate = base.length >= 3 ? base : base + '-user';
-  if (!(await findAccountByHandle(candidate))) return candidate;
-
-  for (let i = 2; i < 100; i++) {
-    const suffixed = `${candidate}-${i}`;
-    if (!(await findAccountByHandle(suffixed))) return suffixed;
+/** Generate a unique opaque handle. */
+async function deriveHandle() {
+  const adjectives = ['swift','bright','calm','dark','keen','bold','warm','cool','sharp','fair'];
+  const nouns = ['fox','owl','elk','jay','asp','ram','bee','ant','emu','cod'];
+  for (let i = 0; i < 50; i++) {
+    const adj = adjectives[crypto.randomInt(adjectives.length)];
+    const noun = nouns[crypto.randomInt(nouns.length)];
+    const suffix = crypto.randomBytes(3).toString('hex');
+    const candidate = `${adj}-${noun}-${suffix}`;
+    if (!(await findAccountByHandle(candidate))) return candidate;
   }
-
-  const suffix = crypto.randomBytes(4).toString('hex');
-  return `user-${suffix}`;
+  return `agent-${crypto.randomBytes(6).toString('hex')}`;
 }

@@ -72,9 +72,9 @@ async function deliverMessage(senderProjectId, recipientProject, plaintext) {
   });
 }
 
-/** Generate a random 8-char invite code. */
+/** Generate a random 32-char invite code (128 bits). */
 export function generateInviteCode() {
-  return crypto.randomBytes(4).toString('hex');
+  return crypto.randomBytes(16).toString('hex');
 }
 
 /** Seed the botmail system account, hello project, and hello invite on first boot. */
@@ -82,7 +82,7 @@ export async function seed() {
   const existing = await findAccountByHandle(SYSTEM_HANDLE);
   if (existing) return;
 
-  await createAccount({ id: SYSTEM_ACCOUNT_ID, email: 'system@botmail.app', handle: SYSTEM_HANDLE });
+  await createAccount({ id: SYSTEM_ACCOUNT_ID, email: 'system@botmail.app', handle: SYSTEM_HANDLE, displayName: 'Botmail' });
 
   const kp = generateKeypair();
   const projectId = deriveAgentId(kp.publicKey);
