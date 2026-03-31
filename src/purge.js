@@ -5,8 +5,8 @@ import { purgeExpiredMessages, purgeExpiredPendingAuth, purgeExpiredEmailCodes, 
 export function startPurgeTimer(intervalMs = 60 * 60 * 1000) {
   const run = async () => {
     await purgeExpiredMessages();
-    await purgeExpiredPendingAuth();
     await purgeExpiredEmailCodes();
+    await purgeExpiredPendingAuth();
     await purgeOldRateEvents();
     await purgeStaleInstances();
     await purgeExpiredTokens();
