@@ -125,7 +125,7 @@ export function createMcpServer(account) {
       const [handle, projectName] = parts;
 
       const recipient = await findProjectByAddress(handle, projectName);
-      if (!recipient || recipient.id === session.project.id) {
+      if (!recipient) {
         return err('Recipient not found or not connected');
       }
 

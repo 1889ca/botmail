@@ -95,13 +95,26 @@ async function main() {
   // --- MCP transport (Streamable HTTP) ---
   const sessions = new Map();
   const MAX_SESSIONS = 1000;
+  const SESSION_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+  // Reap sessions idle for longer than SESSION_TTL_MS
+  setInterval(() => {
+    const now = Date.now();
+    for (const [sid, entry] of sessions) {
+      if (now - entry.lastActivity > SESSION_TTL_MS) {
+        sessions.delete(sid);
+        try { entry.transport.close?.(); } catch {}
+      }
+    }
+  }, 5 * 60 * 1000);
 
   app.post('/mcp', requireAuth, async (req, res) => {
     const sessionId = req.headers['mcp-session-id'];
 
     if (sessionId && sessions.has(sessionId)) {
-      const { transport } = sessions.get(sessionId);
-      await transport.handleRequest(req, res, req.body);
+      const entry = sessions.get(sessionId);
+      entry.lastActivity = Date.now();
+      await entry.transport.handleRequest(req, res, req.body);
       return;
     }
 
@@ -118,7 +131,7 @@ async function main() {
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => crypto.randomUUID(),
         onsessioninitialized: (sid) => {
-          sessions.set(sid, { transport, account: req.account });
+          sessions.set(sid, { transport, account: req.account, lastActivity: Date.now() });
         },
       });
 
@@ -145,7 +158,9 @@ async function main() {
       res.status(400).send('Invalid or missing session');
       return;
     }
-    await sessions.get(sessionId).transport.handleRequest(req, res);
+    const entry = sessions.get(sessionId);
+    entry.lastActivity = Date.now();
+    await entry.transport.handleRequest(req, res);
   });
 
   app.delete('/mcp', requireAuth, async (req, res) => {
@@ -154,7 +169,9 @@ async function main() {
       res.status(400).send('Invalid or missing session');
       return;
     }
-    await sessions.get(sessionId).transport.handleRequest(req, res);
+    const entry = sessions.get(sessionId);
+    entry.lastActivity = Date.now();
+    await entry.transport.handleRequest(req, res);
   });
 
   // --- Invite links ---

@@ -3,15 +3,26 @@
 import { purgeExpiredMessages, purgeExpiredPendingAuth, purgeExpiredEmailCodes, purgeOldRateEvents, purgeStaleInstances, purgeExpiredTokens, purgeExpiredInvites } from './db.js';
 
 export function startPurgeTimer(intervalMs = 60 * 60 * 1000) {
+  const jobs = [
+    purgeExpiredMessages,
+    purgeExpiredEmailCodes,
+    purgeExpiredPendingAuth,
+    purgeOldRateEvents,
+    purgeStaleInstances,
+    purgeExpiredTokens,
+    purgeExpiredInvites,
+  ];
+
   const run = async () => {
-    await purgeExpiredMessages();
-    await purgeExpiredEmailCodes();
-    await purgeExpiredPendingAuth();
-    await purgeOldRateEvents();
-    await purgeStaleInstances();
-    await purgeExpiredTokens();
-    await purgeExpiredInvites();
+    for (const job of jobs) {
+      try {
+        await job();
+      } catch (e) {
+        console.error(`[purge:${job.name}] ${e.message}`);
+      }
+    }
   };
+
   run();
   return setInterval(run, intervalMs);
 }

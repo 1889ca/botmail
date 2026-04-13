@@ -10,7 +10,7 @@ function getResend() {
   if (!resend) resend = new Resend(process.env.RESEND_API_KEY);
   return resend;
 }
-const FROM = process.env.RESEND_FROM_EMAIL || 'botmail <noreply@botmail.dev>';
+const FROM = process.env.RESEND_FROM_EMAIL || 'botmail <noreply@botmail.app>';
 
 /** Generate a 9-digit auth code, store its hash, and email the code. Returns the emailCodeId. */
 export async function sendAuthCode(email, { pendingAuthId, inviteCode, locale } = {}) {
